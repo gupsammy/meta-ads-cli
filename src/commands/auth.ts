@@ -39,7 +39,8 @@ export function registerAuthCommands(program: Command): void {
           process.exit(1);
         }
 
-        const state = Math.random().toString(36).substring(2);
+        const { randomBytes } = await import('node:crypto');
+        const state = randomBytes(32).toString('hex');
         const authUrl = buildOAuthUrl(appId, state);
 
         console.error(`Opening browser for authorization...\n\n  ${authUrl}\n`);
@@ -62,7 +63,7 @@ export function registerAuthCommands(program: Command): void {
         console.error('Exchanging for long-lived token...');
         const longLived = await exchangeForLongLivedToken(tokenResult.access_token, appId, appSecret);
 
-        saveToken(longLived.access_token, appId, appSecret);
+        saveToken(longLived.access_token, appId);
 
         printOutput(
           {

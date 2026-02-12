@@ -57,9 +57,7 @@ export async function graphRequest<T>(
 ): Promise<T> {
   const { method = 'GET', headers = {}, body, params = {}, timeout = 30_000 } = options;
 
-  params['access_token'] = accessToken;
-
-  const url = buildUrl(path, method === 'GET' ? params : { access_token: accessToken });
+  const url = buildUrl(path, method === 'GET' ? params : undefined);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
@@ -68,6 +66,7 @@ export async function graphRequest<T>(
       method,
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
         ...headers,
       },
       signal: controller.signal,
@@ -76,14 +75,12 @@ export async function graphRequest<T>(
     if (body && method !== 'GET') {
       const formParams = new URLSearchParams();
       for (const [key, value] of Object.entries({ ...body, ...params })) {
-        if (key !== 'access_token') {
-          formParams.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
-        }
+        formParams.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
       }
-      formParams.set('access_token', accessToken);
       init.body = formParams.toString();
       init.headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Bearer ${accessToken}`,
         ...headers,
       };
     }

@@ -92,14 +92,14 @@ export async function exchangeForLongLivedToken(
   return response.json() as Promise<{ access_token: string; token_type: string; expires_in?: number }>;
 }
 
-export function saveToken(accessToken: string, appId?: string, appSecret?: string): void {
+export function saveToken(accessToken: string, appId?: string): void {
   const cfg = config.read();
   cfg.auth = {
     ...cfg.auth,
     access_token: accessToken,
     ...(appId && { app_id: appId }),
-    ...(appSecret && { app_secret: appSecret }),
   };
+  delete cfg.auth.app_secret;
   config.write(cfg);
 }
 

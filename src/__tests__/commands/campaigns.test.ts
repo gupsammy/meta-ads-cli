@@ -99,7 +99,6 @@ describe('campaigns API integration', () => {
   it('should create a campaign', async () => {
     nock(BASE_URL)
       .post('/v21.0/act_123456/campaigns')
-      .query({ access_token: TOKEN })
       .reply(200, { id: '333' });
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');
@@ -123,7 +122,6 @@ describe('campaigns API integration', () => {
   it('should update a campaign', async () => {
     nock(BASE_URL)
       .post('/v21.0/111')
-      .query({ access_token: TOKEN })
       .reply(200, { success: true });
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');

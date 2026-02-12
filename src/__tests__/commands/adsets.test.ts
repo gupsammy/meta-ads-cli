@@ -59,7 +59,6 @@ describe('adsets API integration', () => {
   it('should create an ad set', async () => {
     nock(BASE_URL)
       .post('/v21.0/act_123456/adsets')
-      .query({ access_token: TOKEN })
       .reply(200, { id: '1002' });
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');
@@ -86,7 +85,6 @@ describe('adsets API integration', () => {
   it('should update an ad set', async () => {
     nock(BASE_URL)
       .post('/v21.0/1001')
-      .query({ access_token: TOKEN })
       .reply(200, { success: true });
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');

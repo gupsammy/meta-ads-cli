@@ -98,7 +98,6 @@ describe('ads API integration', () => {
   it('should update an ad', async () => {
     nock(BASE_URL)
       .post('/v21.0/5001')
-      .query({ access_token: TOKEN })
       .reply(200, { success: true });
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');

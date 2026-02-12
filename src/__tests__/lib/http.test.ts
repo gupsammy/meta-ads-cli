@@ -21,7 +21,7 @@ describe('graphRequest', () => {
 
     nock(BASE_URL)
       .get('/v21.0/me/adaccounts')
-      .query({ access_token: TOKEN, fields: 'id,name' })
+      .query({ fields: 'id,name' })
       .reply(200, mockData);
 
     const result = await graphRequest('/me/adaccounts', TOKEN, {
@@ -98,7 +98,6 @@ describe('graphRequest', () => {
   it('should make POST request with form body', async () => {
     nock(BASE_URL)
       .post('/v21.0/act_123/campaigns')
-      .query({ access_token: TOKEN })
       .reply(200, { id: '456' });
 
     const result = await graphRequest<{ id: string }>('/act_123/campaigns', TOKEN, {
