@@ -5,7 +5,7 @@ import { printOutput, printError, type OutputFormat } from '../lib/output.js';
 
 type InsightRow = Record<string, unknown>;
 
-const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
+const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
 const DATE_PRESETS = [
   'today', 'yesterday', 'this_month', 'last_month',
