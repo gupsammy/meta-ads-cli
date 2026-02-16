@@ -30,6 +30,7 @@ export function registerInsightsCommands(program: Command): void {
     .option('--until <date>', 'End date (YYYY-MM-DD)')
     .option('--level <level>', 'Breakdown level (account, campaign, adset, ad)', 'account')
     .option('--fields <fields>', 'Comma-separated fields to request', INSIGHT_FIELDS)
+    .option('--time-increment <n>', 'Time increment in days (1 for daily breakdown)')
     .option('--limit <n>', 'Maximum number of rows to return')
     .option('--access-token <token>', 'Access token')
     .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
@@ -45,6 +46,7 @@ export function registerInsightsCommands(program: Command): void {
       until?: string;
       level?: string;
       fields?: string;
+      timeIncrement?: string;
       limit?: string;
       accessToken?: string;
       output: OutputFormat;
@@ -81,6 +83,9 @@ export function registerInsightsCommands(program: Command): void {
         }
         if (opts.level) {
           params['level'] = opts.level;
+        }
+        if (opts.timeIncrement) {
+          params['time_increment'] = opts.timeIncrement;
         }
         if (opts.limit) {
           params['limit'] = opts.limit;

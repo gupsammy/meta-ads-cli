@@ -10,12 +10,12 @@ interface Ad {
   effective_status: string;
   adset_id: string;
   campaign_id: string;
-  creative?: { id: string };
+  creative?: { id: string; title?: string; body?: string; image_url?: string; thumbnail_url?: string };
   created_time: string;
   updated_time: string;
 }
 
-const AD_FIELDS = 'id,name,status,effective_status,adset_id,campaign_id,creative{id},created_time,updated_time';
+const AD_FIELDS = 'id,name,status,effective_status,adset_id,campaign_id,creative{id,title,body,image_url,thumbnail_url},created_time,updated_time';
 
 export function registerAdsCommands(program: Command): void {
   const ads = program.command('ads').description('Manage ads');
@@ -82,6 +82,10 @@ export function registerAdsCommands(program: Command): void {
           status: a.status,
           effective_status: a.effective_status,
           creative_id: a.creative?.id ?? '',
+          creative_title: a.creative?.title ?? '',
+          creative_body: a.creative?.body ?? '',
+          creative_image_url: a.creative?.image_url ?? '',
+          creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
           created_time: a.created_time,
         }));
 
@@ -128,6 +132,10 @@ export function registerAdsCommands(program: Command): void {
             status: ad.status,
             effective_status: ad.effective_status,
             creative_id: ad.creative?.id ?? '',
+            creative_title: ad.creative?.title ?? '',
+            creative_body: ad.creative?.body ?? '',
+            creative_image_url: ad.creative?.image_url ?? '',
+            creative_thumbnail_url: ad.creative?.thumbnail_url ?? '',
             created_time: ad.created_time,
             updated_time: ad.updated_time,
           },
