@@ -3,29 +3,9 @@ import { requireAccessToken } from '../auth.js';
 import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
 import { printOutput, printError, type OutputFormat } from '../lib/output.js';
 
-interface InsightRow {
-  account_id?: string;
-  campaign_id?: string;
-  campaign_name?: string;
-  adset_id?: string;
-  adset_name?: string;
-  ad_id?: string;
-  ad_name?: string;
-  impressions: string;
-  clicks: string;
-  spend: string;
-  cpc?: string;
-  cpm?: string;
-  ctr?: string;
-  reach?: string;
-  frequency?: string;
-  conversions?: string;
-  cost_per_conversion?: string;
-  date_start: string;
-  date_stop: string;
-}
+type InsightRow = Record<string, unknown>;
 
-const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,date_start,date_stop';
+const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
 const DATE_PRESETS = [
   'today', 'yesterday', 'this_month', 'last_month',
@@ -114,24 +94,7 @@ export function registerInsightsCommands(program: Command): void {
           { params },
         );
 
-        const data = (response.data ?? []).map((row) => ({
-          ...(row.campaign_id && { campaign_id: row.campaign_id }),
-          ...(row.campaign_name && { campaign_name: row.campaign_name }),
-          ...(row.adset_id && { adset_id: row.adset_id }),
-          ...(row.adset_name && { adset_name: row.adset_name }),
-          ...(row.ad_id && { ad_id: row.ad_id }),
-          ...(row.ad_name && { ad_name: row.ad_name }),
-          impressions: row.impressions,
-          clicks: row.clicks,
-          spend: row.spend,
-          cpc: row.cpc ?? '',
-          cpm: row.cpm ?? '',
-          ctr: row.ctr ?? '',
-          reach: row.reach ?? '',
-          frequency: row.frequency ?? '',
-          date_start: row.date_start,
-          date_stop: row.date_stop,
-        }));
+        const data = response.data ?? [];
 
         printOutput(data, opts.output);
       } catch (error) {
