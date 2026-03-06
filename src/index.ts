@@ -12,7 +12,14 @@ const program = new Command();
 program
   .name('meta-ads')
   .description('Command-line interface for the Meta (Facebook) Marketing API')
-  .version('0.1.0');
+  .version('0.1.0', '--version')
+  .action(() => {
+    program.help();
+  });
+
+program.configureOutput({
+  writeErr: (str) => process.stderr.write(str),
+});
 
 registerAuthCommands(program);
 registerAccountsCommands(program);

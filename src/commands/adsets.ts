@@ -1,7 +1,7 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
-import { printOutput, printError, type OutputFormat } from '../lib/output.js';
+import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
+import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
 interface AdSet {
   id: string;
@@ -23,6 +23,8 @@ interface AdSet {
 
 const ADSET_FIELDS = 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_amount,created_time,updated_time,start_time,end_time';
 
+const DESTRUCTIVE_STATUSES = ['PAUSED', 'DELETED', 'ARCHIVED'];
+
 export function registerAdsetsCommands(program: Command): void {
   const adsets = program.command('adsets').description('Manage ad sets');
 
@@ -35,8 +37,7 @@ export function registerAdsetsCommands(program: Command): void {
     .option('--limit <n>', 'Maximum number of ad sets to return')
     .option('--after <cursor>', 'Pagination cursor')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       accountId: string;
@@ -46,14 +47,12 @@ export function registerAdsetsCommands(program: Command): void {
       after?: string;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
         const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
         const params: Record<string, string> = { fields: ADSET_FIELDS };
-        if (opts.limit) params['limit'] = opts.limit;
         if (opts.after) params['after'] = opts.after;
 
         const filtering: Array<{ field: string; operator: string; value: string[] }> = [];
@@ -67,15 +66,18 @@ export function registerAdsetsCommands(program: Command): void {
           params['filtering'] = JSON.stringify(filtering);
         }
 
+        const limit = opts.limit ? parseInt(opts.limit, 10) : 50;
+
         if (opts.verbose) console.error(`GET /${accountId}/adsets`);
 
-        const response = await graphRequestWithRetry<GraphApiResponse<AdSet>>(
+        const result = await paginateAll<AdSet>(
           `/${accountId}/adsets`,
           token,
           { params },
+          limit,
         );
 
-        const data = (response.data ?? []).map((a) => ({
+        const data = result.data.map((a) => ({
           id: a.id,
           name: a.name,
           campaign_id: a.campaign_id,
@@ -87,14 +89,17 @@ export function registerAdsetsCommands(program: Command): void {
           created_time: a.created_time,
         }));
 
-        printOutput(data, opts.output);
+        printListOutput(data, opts.output, {
+          has_more: result.has_more,
+          next_cursor: result.next_cursor,
+        });
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 
@@ -103,14 +108,12 @@ export function registerAdsetsCommands(program: Command): void {
     .description('Get details for a specific ad set')
     .requiredOption('--adset-id <id>', 'Ad set ID')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       adsetId: string;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
@@ -148,7 +151,7 @@ export function registerAdsetsCommands(program: Command): void {
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 
@@ -169,8 +172,7 @@ export function registerAdsetsCommands(program: Command): void {
     .option('--status <status>', 'Status (ACTIVE, PAUSED)', 'PAUSED')
     .option('--dry-run', 'Show the request that would be made without executing it')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       accountId: string;
@@ -188,7 +190,6 @@ export function registerAdsetsCommands(program: Command): void {
       dryRun?: boolean;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
@@ -210,8 +211,8 @@ export function registerAdsetsCommands(program: Command): void {
           try {
             body['targeting'] = JSON.parse(opts.targeting);
           } catch {
-            console.error('Invalid targeting JSON. Provide a valid JSON string.');
-            process.exit(1);
+            printError({ code: 'USAGE', message: 'Invalid targeting JSON. Provide a valid JSON string.' }, opts.output);
+            process.exit(EXIT_USAGE);
           }
         }
         if (opts.startTime) body['start_time'] = opts.startTime;
@@ -237,7 +238,7 @@ export function registerAdsetsCommands(program: Command): void {
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 
@@ -251,10 +252,10 @@ export function registerAdsetsCommands(program: Command): void {
     .option('--lifetime-budget <amount>', 'New lifetime budget in cents')
     .option('--bid-amount <amount>', 'New bid amount in cents')
     .option('--targeting <json>', 'New targeting spec as JSON string')
+    .option('--force', 'Skip confirmation for destructive status changes')
     .option('--dry-run', 'Show the request that would be made without executing it')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       adsetId: string;
@@ -264,10 +265,10 @@ export function registerAdsetsCommands(program: Command): void {
       lifetimeBudget?: string;
       bidAmount?: string;
       targeting?: string;
+      force?: boolean;
       dryRun?: boolean;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
@@ -283,14 +284,30 @@ export function registerAdsetsCommands(program: Command): void {
           try {
             body['targeting'] = JSON.parse(opts.targeting);
           } catch {
-            console.error('Invalid targeting JSON.');
-            process.exit(1);
+            printError({ code: 'USAGE', message: 'Invalid targeting JSON.' }, opts.output);
+            process.exit(EXIT_USAGE);
           }
         }
 
         if (Object.keys(body).length === 0) {
-          console.error('No update fields specified.');
-          process.exit(1);
+          printError({ code: 'USAGE', message: 'No update fields specified.' }, opts.output);
+          process.exit(EXIT_USAGE);
+        }
+
+        if (opts.status && DESTRUCTIVE_STATUSES.includes(opts.status) && !opts.dryRun) {
+          const confirmed = await confirmAction(`Change adset ${opts.adsetId} status to ${opts.status}?`, opts.force);
+          if (!confirmed) {
+            if (!process.stdin.isTTY) {
+              printError({
+                code: 'USAGE',
+                message: 'Destructive status change requires --force in non-interactive mode.',
+                hint: `meta-ads adsets update --adset-id ${opts.adsetId} --status ${opts.status} --force`,
+              }, opts.output);
+            } else {
+              console.error('Aborted.');
+            }
+            process.exit(EXIT_USAGE);
+          }
         }
 
         if (opts.dryRun) {
@@ -313,7 +330,7 @@ export function registerAdsetsCommands(program: Command): void {
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 }

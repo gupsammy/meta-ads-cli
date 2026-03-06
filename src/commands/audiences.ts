@@ -1,7 +1,7 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
-import { printOutput, printError, type OutputFormat } from '../lib/output.js';
+import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
+import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
 interface CustomAudience {
   id: string;
@@ -27,8 +27,7 @@ export function registerAudiencesCommands(program: Command): void {
     .option('--limit <n>', 'Maximum number of audiences to return')
     .option('--after <cursor>', 'Pagination cursor')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       accountId: string;
@@ -36,25 +35,26 @@ export function registerAudiencesCommands(program: Command): void {
       after?: string;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
         const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
         const params: Record<string, string> = { fields: AUDIENCE_FIELDS };
-        if (opts.limit) params['limit'] = opts.limit;
         if (opts.after) params['after'] = opts.after;
+
+        const limit = opts.limit ? parseInt(opts.limit, 10) : 50;
 
         if (opts.verbose) console.error(`GET /${accountId}/customaudiences`);
 
-        const response = await graphRequestWithRetry<GraphApiResponse<CustomAudience>>(
+        const result = await paginateAll<CustomAudience>(
           `/${accountId}/customaudiences`,
           token,
           { params },
+          limit,
         );
 
-        const data = (response.data ?? []).map((a) => ({
+        const data = result.data.map((a) => ({
           id: a.id,
           name: a.name,
           description: a.description ?? '',
@@ -65,14 +65,17 @@ export function registerAudiencesCommands(program: Command): void {
           time_created: a.time_created ?? '',
         }));
 
-        printOutput(data, opts.output);
+        printListOutput(data, opts.output, {
+          has_more: result.has_more,
+          next_cursor: result.next_cursor,
+        });
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 
@@ -81,14 +84,12 @@ export function registerAudiencesCommands(program: Command): void {
     .description('Get details for a specific custom audience')
     .requiredOption('--audience-id <id>', 'Custom audience ID')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       audienceId: string;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
@@ -119,7 +120,7 @@ export function registerAudiencesCommands(program: Command): void {
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 }

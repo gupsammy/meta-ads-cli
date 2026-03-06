@@ -1,8 +1,7 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { graphRequestWithRetry, type GraphApiResponse } from '../lib/http.js';
-import { printOutput, printError, type OutputFormat } from '../lib/output.js';
-import { HttpError } from '../lib/http.js';
+import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
+import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
 interface AdAccount {
   id: string;
@@ -37,24 +36,27 @@ export function registerAccountsCommands(program: Command): void {
     .description('List ad accounts accessible by the current user')
     .option('--access-token <token>', 'Access token')
     .option('--limit <n>', 'Maximum number of accounts to return')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .option('--after <cursor>', 'Pagination cursor')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
-    .action(async (opts: { accessToken?: string; limit?: string; output: OutputFormat; quiet?: boolean; verbose?: boolean }) => {
+    .action(async (opts: { accessToken?: string; limit?: string; after?: string; output: OutputFormat; verbose?: boolean }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
         const params: Record<string, string> = { fields: ACCOUNT_FIELDS };
-        if (opts.limit) params['limit'] = opts.limit;
+        if (opts.after) params['after'] = opts.after;
+
+        const limit = opts.limit ? parseInt(opts.limit, 10) : 50;
 
         if (opts.verbose) console.error(`GET /me/adaccounts?fields=${ACCOUNT_FIELDS}`);
 
-        const response = await graphRequestWithRetry<GraphApiResponse<AdAccount>>(
+        const result = await paginateAll<AdAccount>(
           '/me/adaccounts',
           token,
           { params },
+          limit,
         );
 
-        const accounts = (response.data ?? []).map((a) => ({
+        const accounts = result.data.map((a) => ({
           id: a.id,
           name: a.name,
           account_id: a.account_id,
@@ -64,14 +66,17 @@ export function registerAccountsCommands(program: Command): void {
           amount_spent: a.amount_spent,
         }));
 
-        printOutput(accounts, opts.output);
+        printListOutput(accounts, opts.output, {
+          has_more: result.has_more,
+          next_cursor: result.next_cursor,
+        });
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 
@@ -80,10 +85,9 @@ export function registerAccountsCommands(program: Command): void {
     .description('Get details for a specific ad account')
     .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
-    .action(async (opts: { accountId: string; accessToken?: string; output: OutputFormat; quiet?: boolean; verbose?: boolean }) => {
+    .action(async (opts: { accountId: string; accessToken?: string; output: OutputFormat; verbose?: boolean }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
         const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
@@ -111,7 +115,7 @@ export function registerAccountsCommands(program: Command): void {
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 }

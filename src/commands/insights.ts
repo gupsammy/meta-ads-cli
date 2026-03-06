@@ -1,7 +1,7 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
 import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
-import { printOutput, printError, type OutputFormat } from '../lib/output.js';
+import { printListOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
 type InsightRow = Record<string, unknown>;
 
@@ -28,14 +28,19 @@ export function registerInsightsCommands(program: Command): void {
     .option('--date-preset <preset>', `Date preset (${DATE_PRESETS.slice(0, 5).join(', ')}...)`)
     .option('--since <date>', 'Start date (YYYY-MM-DD)')
     .option('--until <date>', 'End date (YYYY-MM-DD)')
-    .option('--level <level>', 'Breakdown level (account, campaign, adset, ad)', 'account')
-    .option('--fields <fields>', 'Comma-separated fields to request', INSIGHT_FIELDS)
+    .option('--level <level>', 'Breakdown level (account, campaign, adset, ad); defaults to match the ID flag used')
+    .option('--fields <fields>', 'Comma-separated fields to request (use --verbose --help to see defaults)')
     .option('--time-increment <n>', 'Time increment in days (1 for daily breakdown)')
     .option('--limit <n>', 'Maximum number of rows to return')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
+    .addHelpText('after', `
+Examples:
+  $ meta-ads insights get --account-id act_123456 --date-preset last_30d
+  $ meta-ads insights get --account-id act_123456 --since 2024-01-01 --until 2024-01-31 --level campaign
+  $ meta-ads insights get --campaign-id 123 --time-increment 1 -o json
+`)
     .action(async (opts: {
       accountId?: string;
       campaignId?: string;
@@ -50,7 +55,6 @@ export function registerInsightsCommands(program: Command): void {
       limit?: string;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
@@ -67,12 +71,20 @@ export function registerInsightsCommands(program: Command): void {
           const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
           basePath = `/${accountId}/insights`;
         } else {
-          console.error('Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id');
-          process.exit(1);
+          printError({ code: 'USAGE', message: 'Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id' }, opts.output);
+          process.exit(EXIT_USAGE);
         }
+
+        if ((opts.since && !opts.until) || (!opts.since && opts.until)) {
+          printError({ code: 'USAGE', message: '--since and --until must both be specified together' }, opts.output);
+          process.exit(EXIT_USAGE);
+        }
+
+        const level = opts.level ?? (opts.adId ? 'ad' : opts.adsetId ? 'adset' : opts.campaignId ? 'campaign' : 'account');
 
         const params: Record<string, string> = {
           fields: opts.fields ?? INSIGHT_FIELDS,
+          level,
         };
 
         if (opts.datePreset) {
@@ -80,9 +92,6 @@ export function registerInsightsCommands(program: Command): void {
         }
         if (opts.since && opts.until) {
           params['time_range'] = JSON.stringify({ since: opts.since, until: opts.until });
-        }
-        if (opts.level) {
-          params['level'] = opts.level;
         }
         if (opts.timeIncrement) {
           params['time_increment'] = opts.timeIncrement;
@@ -101,14 +110,14 @@ export function registerInsightsCommands(program: Command): void {
 
         const data = response.data ?? [];
 
-        printOutput(data, opts.output);
+        printListOutput(data, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 }

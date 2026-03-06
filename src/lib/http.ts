@@ -150,16 +150,28 @@ export async function graphRequestWithRetry<T>(
   throw lastError;
 }
 
+export interface PaginatedResult<T> {
+  data: T[];
+  has_more: boolean;
+  next_cursor?: string;
+}
+
 export async function paginateAll<T>(
   path: string,
   accessToken: string,
   options: HttpOptions = {},
   limit?: number,
-): Promise<T[]> {
+): Promise<PaginatedResult<T>> {
   const allData: T[] = [];
   let nextUrl: string | undefined = undefined;
   let currentPath = path;
-  let currentOptions = options;
+
+  // Inject limit into API params so server-side cursors align with page boundaries.
+  const initialParams = { ...(options.params ?? {}) };
+  if (limit && !initialParams['limit']) {
+    initialParams['limit'] = String(limit);
+  }
+  let currentOptions: HttpOptions = { ...options, params: initialParams };
 
   while (true) {
     let response: GraphApiResponse<T>;
@@ -174,17 +186,23 @@ export async function paginateAll<T>(
     }
 
     if (limit && allData.length >= limit) {
-      return allData.slice(0, limit);
+      return {
+        data: allData.slice(0, limit),
+        has_more: !!response.paging?.next || allData.length > limit,
+        next_cursor: allData.length === limit ? response.paging?.cursors?.after : undefined,
+      };
     }
 
     if (response.paging?.next) {
       nextUrl = response.paging.next;
-      currentPath = '';
-      currentOptions = {};
     } else {
       break;
     }
   }
 
-  return allData;
+  return {
+    data: allData,
+    has_more: false,
+    next_cursor: undefined,
+  };
 }

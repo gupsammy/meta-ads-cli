@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import {
   buildOAuthUrl,
   exchangeCodeForToken,
@@ -7,7 +7,7 @@ import {
   saveToken,
   startOAuthCallbackServer,
 } from '../auth.js';
-import { printOutput, type OutputFormat } from '../lib/output.js';
+import { printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
 export function registerAuthCommands(program: Command): void {
   const auth = program.command('auth').description('Manage authentication');
@@ -16,27 +16,48 @@ export function registerAuthCommands(program: Command): void {
     .command('login')
     .description('Authenticate with Meta via OAuth2 or access token')
     .option('--app-id <id>', 'Meta App ID')
-    .option('--app-secret <secret>', 'Meta App Secret')
-    .option('--token <token>', 'Directly set an access token (skip OAuth flow)')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .action(async (opts: { appId?: string; appSecret?: string; token?: string; output: OutputFormat }) => {
+    .option('--token <token>', 'Access token (use - to read from stdin)')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
+    .addHelpText('after', `
+Examples:
+  $ meta-ads auth login --token EAAx...
+  $ echo $TOKEN | meta-ads auth login --token -
+  $ META_ADS_APP_SECRET=xxx meta-ads auth login --app-id 123456
+`)
+    .action(async (opts: { appId?: string; token?: string; output: OutputFormat }) => {
       try {
         if (opts.token) {
-          saveToken(opts.token);
+          let tokenValue = opts.token;
+
+          if (tokenValue === '-') {
+            const chunks: Buffer[] = [];
+            for await (const chunk of process.stdin) {
+              chunks.push(chunk);
+            }
+            tokenValue = Buffer.concat(chunks).toString().trim();
+            if (!tokenValue) {
+              printError({ code: 'USAGE', message: 'No token provided on stdin.' }, opts.output);
+              process.exit(EXIT_USAGE);
+            }
+          } else {
+            console.error('Warning: passing tokens via CLI flags is insecure. Use stdin: echo $TOKEN | meta-ads auth login --token -');
+          }
+
+          saveToken(tokenValue);
           printOutput({ status: 'authenticated', message: 'Access token saved successfully.' }, opts.output);
           return;
         }
 
         const appId = opts.appId ?? process.env['META_ADS_APP_ID'];
-        const appSecret = opts.appSecret ?? process.env['META_ADS_APP_SECRET'];
+        const appSecret = process.env['META_ADS_APP_SECRET'];
 
         if (!appId || !appSecret) {
-          console.error(
-            'App ID and App Secret are required for OAuth flow.\n' +
-              'Provide via --app-id and --app-secret flags, or set META_ADS_APP_ID and META_ADS_APP_SECRET env vars.\n\n' +
-              'Alternatively, use --token to directly set an access token.',
-          );
-          process.exit(1);
+          printError({
+            code: 'USAGE',
+            message: 'App ID and App Secret are required for OAuth flow.',
+            hint: 'Set META_ADS_APP_ID and META_ADS_APP_SECRET env vars, or use --token to set an access token directly.',
+          }, opts.output);
+          process.exit(EXIT_USAGE);
         }
 
         const { randomBytes } = await import('node:crypto');
@@ -54,7 +75,7 @@ export function registerAuthCommands(program: Command): void {
 
         if (callbackResult.state !== state) {
           console.error('OAuth state mismatch. Authorization may have been tampered with.');
-          process.exit(1);
+          process.exit(EXIT_RUNTIME);
         }
 
         console.error('Exchanging authorization code for access token...');
@@ -74,15 +95,15 @@ export function registerAuthCommands(program: Command): void {
           opts.output,
         );
       } catch (error) {
-        console.error('Authentication failed:', error instanceof Error ? error.message : error);
-        process.exit(1);
+        printError({ code: 'AUTH_FAILED', message: error instanceof Error ? error.message : String(error) }, opts.output);
+        process.exit(EXIT_RUNTIME);
       }
     });
 
   auth
     .command('status')
     .description('Show current authentication status')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .action((opts: { output: OutputFormat }) => {
       const status = getAuthStatus();
       printOutput(
@@ -99,8 +120,20 @@ export function registerAuthCommands(program: Command): void {
   auth
     .command('logout')
     .description('Remove stored credentials')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .action((opts: { output: OutputFormat }) => {
+    .option('--force', 'Skip confirmation')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
+    .action(async (opts: { force?: boolean; output: OutputFormat }) => {
+      const confirmed = await confirmAction('Remove credentials?', opts.force);
+      if (!confirmed) {
+        if (!process.stdin.isTTY) {
+          printError({
+            code: 'USAGE',
+            message: 'Logout requires --force in non-interactive mode.',
+            hint: 'meta-ads auth logout --force',
+          }, opts.output);
+        }
+        process.exit(EXIT_USAGE);
+      }
       saveToken('');
       printOutput({ status: 'logged_out', message: 'Credentials removed.' }, opts.output);
     });
