@@ -188,8 +188,8 @@ export async function paginateAll<T>(
     if (limit && allData.length >= limit) {
       return {
         data: allData.slice(0, limit),
-        has_more: !!response.paging?.next,
-        next_cursor: response.paging?.cursors?.after,
+        has_more: !!response.paging?.next || allData.length > limit,
+        next_cursor: allData.length === limit ? response.paging?.cursors?.after : undefined,
       };
     }
 

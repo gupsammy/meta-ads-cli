@@ -88,6 +88,7 @@ export function printError(
   const hint = error.hint !== undefined ? error.hint : getErrorHint(error.code);
   if (format === 'json') {
     const obj: Record<string, unknown> = { error: error.code, message: error.message };
+    if (error.retry_after) obj['retry_after'] = error.retry_after;
     if (hint) obj['hint'] = hint;
     console.error(JSON.stringify(obj, null, 2));
   } else {

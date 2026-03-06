@@ -156,7 +156,9 @@ describe('paginateAll', () => {
 
     expect(result.data).toHaveLength(2);
     expect(result.has_more).toBe(true);
-    expect(result.next_cursor).toBe('cursor_xyz');
+    // cursor_xyz points after item 3, not item 2 — returning it would skip item 3.
+    // When the page was truncated mid-page, no valid cursor exists.
+    expect(result.next_cursor).toBeUndefined();
   });
 
   it('should forward after cursor from options.params to API request', async () => {
