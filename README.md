@@ -1,6 +1,6 @@
 # meta-ads-cli
 
-[![npm version](https://img.shields.io/npm/v/@funnelenvy/meta-ads-cli)](https://www.npmjs.com/package/@funnelenvy/meta-ads-cli)
+[![npm version](https://img.shields.io/npm/v/meta-ads-cli)](https://www.npmjs.com/package/meta-ads-cli)
 [![CI](https://github.com/FunnelEnvy/meta-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/FunnelEnvy/meta-ads-cli/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -9,7 +9,7 @@ Command-line interface for the Meta (Facebook) Marketing API. Manage campaigns, 
 ## Install
 
 ```bash
-npm install -g @funnelenvy/meta-ads-cli
+npm install -g meta-ads-cli
 ```
 
 ## Quick Start

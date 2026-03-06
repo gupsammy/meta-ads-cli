@@ -1,5 +1,5 @@
 {
-  "name": "@funnelenvy/meta-ads-cli",
+  "name": "meta-ads-cli",
   "version": "0.1.0",
   "description": "Command-line interface for the Meta (Facebook) Marketing API",
   "type": "module",
