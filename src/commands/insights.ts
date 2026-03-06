@@ -1,11 +1,8 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
+import { HttpError } from '../lib/http.js';
 import { printListOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
-
-type InsightRow = Record<string, unknown>;
-
-const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
+import { getInsights, InsightsValidationError } from '../services/insights.js';
 
 const DATE_PRESETS = [
   'today', 'yesterday', 'this_month', 'last_month',
@@ -60,59 +57,31 @@ Examples:
       try {
         const token = requireAccessToken(opts.accessToken);
 
-        let basePath: string;
-        if (opts.adId) {
-          basePath = `/${opts.adId}/insights`;
-        } else if (opts.adsetId) {
-          basePath = `/${opts.adsetId}/insights`;
-        } else if (opts.campaignId) {
-          basePath = `/${opts.campaignId}/insights`;
-        } else if (opts.accountId) {
-          const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
-          basePath = `/${accountId}/insights`;
-        } else {
-          printError({ code: 'USAGE', message: 'Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id' }, opts.output);
-          process.exit(EXIT_USAGE);
+        if (opts.verbose) {
+          const id = opts.adId ?? opts.adsetId ?? opts.campaignId ?? opts.accountId ?? '?';
+          console.error(`GET /${id}/insights`);
         }
 
-        if ((opts.since && !opts.until) || (!opts.since && opts.until)) {
-          printError({ code: 'USAGE', message: '--since and --until must both be specified together' }, opts.output);
-          process.exit(EXIT_USAGE);
-        }
-
-        const level = opts.level ?? (opts.adId ? 'ad' : opts.adsetId ? 'adset' : opts.campaignId ? 'campaign' : 'account');
-
-        const params: Record<string, string> = {
-          fields: opts.fields ?? INSIGHT_FIELDS,
-          level,
-        };
-
-        if (opts.datePreset) {
-          params['date_preset'] = opts.datePreset;
-        }
-        if (opts.since && opts.until) {
-          params['time_range'] = JSON.stringify({ since: opts.since, until: opts.until });
-        }
-        if (opts.timeIncrement) {
-          params['time_increment'] = opts.timeIncrement;
-        }
-        if (opts.limit) {
-          params['limit'] = opts.limit;
-        }
-
-        if (opts.verbose) console.error(`GET ${basePath}`);
-
-        const response = await graphRequestWithRetry<GraphApiResponse<InsightRow>>(
-          basePath,
-          token,
-          { params },
-        );
-
-        const data = response.data ?? [];
+        const data = await getInsights(token, {
+          accountId: opts.accountId,
+          campaignId: opts.campaignId,
+          adsetId: opts.adsetId,
+          adId: opts.adId,
+          datePreset: opts.datePreset,
+          since: opts.since,
+          until: opts.until,
+          level: opts.level,
+          fields: opts.fields,
+          timeIncrement: opts.timeIncrement,
+          limit: opts.limit,
+        });
 
         printListOutput(data, opts.output);
       } catch (error) {
-        if (error instanceof HttpError) {
+        if (error instanceof InsightsValidationError) {
+          printError({ code: 'USAGE', message: error.message }, opts.output);
+          process.exit(EXIT_USAGE);
+        } else if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);

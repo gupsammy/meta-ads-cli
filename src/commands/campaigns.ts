@@ -1,23 +1,8 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
+import { HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
-
-interface Campaign {
-  id: string;
-  name: string;
-  status: string;
-  effective_status: string;
-  objective: string;
-  daily_budget?: string;
-  lifetime_budget?: string;
-  created_time: string;
-  updated_time: string;
-  start_time?: string;
-  stop_time?: string;
-}
-
-const CAMPAIGN_FIELDS = 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,created_time,updated_time,start_time,stop_time';
+import { listCampaigns, getCampaign, createCampaign, updateCampaign, dryRunCreateCampaign, dryRunUpdateCampaign, buildUpdateCampaignBody } from '../services/campaigns.js';
 
 const DESTRUCTIVE_STATUSES = ['PAUSED', 'DELETED', 'ARCHIVED'];
 
@@ -51,38 +36,18 @@ Examples:
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
-        const params: Record<string, string> = { fields: CAMPAIGN_FIELDS };
-        if (opts.after) params['after'] = opts.after;
-        if (opts.status) {
-          params['filtering'] = JSON.stringify([
-            { field: 'effective_status', operator: 'IN', value: [opts.status] },
-          ]);
-        }
+        const limit = opts.limit ? parseInt(opts.limit, 10) : undefined;
 
-        const limit = opts.limit ? parseInt(opts.limit, 10) : 50;
+        if (opts.verbose) console.error(`GET /${opts.accountId}/campaigns`);
 
-        if (opts.verbose) console.error(`GET /${accountId}/campaigns`);
-
-        const result = await paginateAll<Campaign>(
-          `/${accountId}/campaigns`,
-          token,
-          { params },
+        const result = await listCampaigns(token, {
+          accountId: opts.accountId,
+          status: opts.status,
           limit,
-        );
+          after: opts.after,
+        });
 
-        const data = result.data.map((c) => ({
-          id: c.id,
-          name: c.name,
-          status: c.status,
-          effective_status: c.effective_status,
-          objective: c.objective,
-          daily_budget: c.daily_budget ?? '',
-          lifetime_budget: c.lifetime_budget ?? '',
-          created_time: c.created_time,
-        }));
-
-        printListOutput(data, opts.output, {
+        printListOutput(result.data, opts.output, {
           has_more: result.has_more,
           next_cursor: result.next_cursor,
         });
@@ -111,28 +76,11 @@ Examples:
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const params: Record<string, string> = { fields: CAMPAIGN_FIELDS };
 
         if (opts.verbose) console.error(`GET /${opts.campaignId}`);
 
-        const campaign = await graphRequestWithRetry<Campaign>(`/${opts.campaignId}`, token, { params });
-
-        printOutput(
-          {
-            id: campaign.id,
-            name: campaign.name,
-            status: campaign.status,
-            effective_status: campaign.effective_status,
-            objective: campaign.objective,
-            daily_budget: campaign.daily_budget ?? '',
-            lifetime_budget: campaign.lifetime_budget ?? '',
-            created_time: campaign.created_time,
-            updated_time: campaign.updated_time,
-            start_time: campaign.start_time ?? '',
-            stop_time: campaign.stop_time ?? '',
-          },
-          opts.output,
-        );
+        const campaign = await getCampaign(token, opts.campaignId);
+        printOutput(campaign, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
@@ -172,34 +120,26 @@ Examples:
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
 
-        const body: Record<string, unknown> = {
+        const serviceOpts = {
+          accountId: opts.accountId,
           name: opts.name,
           objective: opts.objective,
-          status: opts.status ?? 'PAUSED',
-          special_ad_categories: opts.specialAdCategories
-            ? opts.specialAdCategories.split(',').map((s) => s.trim())
-            : [],
+          status: opts.status,
+          dailyBudget: opts.dailyBudget,
+          lifetimeBudget: opts.lifetimeBudget,
+          specialAdCategories: opts.specialAdCategories,
         };
 
-        if (opts.dailyBudget) body['daily_budget'] = opts.dailyBudget;
-        if (opts.lifetimeBudget) body['lifetime_budget'] = opts.lifetimeBudget;
-
         if (opts.dryRun) {
-          printOutput({ dry_run: true, method: 'POST', path: `/${accountId}/campaigns`, body }, opts.output);
+          printOutput(dryRunCreateCampaign(serviceOpts), opts.output);
           return;
         }
 
-        if (opts.verbose) console.error(`POST /${accountId}/campaigns`);
+        if (opts.verbose) console.error(`POST /${opts.accountId}/campaigns`);
 
-        const result = await graphRequestWithRetry<{ id: string }>(
-          `/${accountId}/campaigns`,
-          token,
-          { method: 'POST', body },
-        );
-
-        printOutput({ id: result.id, name: opts.name, status: opts.status ?? 'PAUSED', objective: opts.objective }, opts.output);
+        const result = await createCampaign(token, serviceOpts);
+        printOutput(result, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
@@ -244,12 +184,15 @@ Examples:
       try {
         const token = requireAccessToken(opts.accessToken);
 
-        const body: Record<string, unknown> = {};
-        if (opts.name) body['name'] = opts.name;
-        if (opts.status) body['status'] = opts.status;
-        if (opts.dailyBudget) body['daily_budget'] = opts.dailyBudget;
-        if (opts.lifetimeBudget) body['lifetime_budget'] = opts.lifetimeBudget;
+        const serviceOpts = {
+          campaignId: opts.campaignId,
+          name: opts.name,
+          status: opts.status,
+          dailyBudget: opts.dailyBudget,
+          lifetimeBudget: opts.lifetimeBudget,
+        };
 
+        const body = buildUpdateCampaignBody(serviceOpts);
         if (Object.keys(body).length === 0) {
           printError({ code: 'USAGE', message: 'No update fields specified. Use --name, --status, --daily-budget, or --lifetime-budget.' }, opts.output);
           process.exit(EXIT_USAGE);
@@ -272,19 +215,14 @@ Examples:
         }
 
         if (opts.dryRun) {
-          printOutput({ dry_run: true, method: 'POST', path: `/${opts.campaignId}`, body }, opts.output);
+          printOutput(dryRunUpdateCampaign(serviceOpts), opts.output);
           return;
         }
 
         if (opts.verbose) console.error(`POST /${opts.campaignId}`);
 
-        const result = await graphRequestWithRetry<{ success: boolean }>(
-          `/${opts.campaignId}`,
-          token,
-          { method: 'POST', body },
-        );
-
-        printOutput({ campaign_id: opts.campaignId, updated: result.success ?? true, changes: body }, opts.output);
+        const result = await updateCampaign(token, serviceOpts);
+        printOutput({ campaign_id: result.id, updated: result.updated, changes: result.changes }, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);

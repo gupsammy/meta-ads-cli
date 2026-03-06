@@ -15,8 +15,10 @@ function isColorDisabled(stream: NodeJS.WriteStream = process.stdout): boolean {
   );
 }
 
+type AnyRecord = Record<string, any>;
+
 export function formatOutput(
-  data: Record<string, unknown>[] | Record<string, unknown>,
+  data: AnyRecord[] | AnyRecord,
   format: OutputFormat,
 ): string {
   const rows = Array.isArray(data) ? data : [data];
@@ -34,14 +36,14 @@ export function formatOutput(
 }
 
 export function printOutput(
-  data: Record<string, unknown>[] | Record<string, unknown>,
+  data: AnyRecord[] | AnyRecord,
   format: OutputFormat,
 ): void {
   console.log(formatOutput(data, format));
 }
 
 export function printListOutput(
-  data: Record<string, unknown>[],
+  data: AnyRecord[],
   format: OutputFormat,
   paging?: { has_more: boolean; next_cursor?: string },
 ): void {
@@ -112,7 +114,7 @@ export async function confirmAction(message: string, force?: boolean): Promise<b
   });
 }
 
-function formatTable(rows: Record<string, unknown>[]): string {
+function formatTable(rows: AnyRecord[]): string {
   if (rows.length === 0) return 'No data';
   const keys = Object.keys(rows[0]);
   const noColor = isColorDisabled();
@@ -126,7 +128,7 @@ function formatTable(rows: Record<string, unknown>[]): string {
   return table.toString();
 }
 
-function formatCsv(rows: Record<string, unknown>[]): string {
+function formatCsv(rows: AnyRecord[]): string {
   if (rows.length === 0) return '';
   const keys = Object.keys(rows[0]);
   return stringify(

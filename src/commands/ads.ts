@@ -1,21 +1,8 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
+import { HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
-
-interface Ad {
-  id: string;
-  name: string;
-  status: string;
-  effective_status: string;
-  adset_id: string;
-  campaign_id: string;
-  creative?: { id: string; title?: string; body?: string; image_url?: string; thumbnail_url?: string };
-  created_time: string;
-  updated_time: string;
-}
-
-const AD_FIELDS = 'id,name,status,effective_status,adset_id,campaign_id,creative{id,title,body,image_url,thumbnail_url},created_time,updated_time';
+import { listAds, getAd, updateAd, dryRunUpdateAd, buildUpdateAdBody } from '../services/ads.js';
 
 const DESTRUCTIVE_STATUSES = ['PAUSED', 'DELETED', 'ARCHIVED'];
 
@@ -47,51 +34,20 @@ export function registerAdsCommands(program: Command): void {
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
-        const params: Record<string, string> = { fields: AD_FIELDS };
-        if (opts.after) params['after'] = opts.after;
+        const limit = opts.limit ? parseInt(opts.limit, 10) : undefined;
 
-        const filtering: Array<{ field: string; operator: string; value: string[] }> = [];
-        if (opts.status) {
-          filtering.push({ field: 'effective_status', operator: 'IN', value: [opts.status] });
-        }
-        if (opts.adsetId) {
-          filtering.push({ field: 'adset_id', operator: 'EQUAL', value: [opts.adsetId] });
-        }
-        if (opts.campaignId) {
-          filtering.push({ field: 'campaign_id', operator: 'EQUAL', value: [opts.campaignId] });
-        }
-        if (filtering.length > 0) {
-          params['filtering'] = JSON.stringify(filtering);
-        }
+        if (opts.verbose) console.error(`GET /${opts.accountId}/ads`);
 
-        const limit = opts.limit ? parseInt(opts.limit, 10) : 50;
-
-        if (opts.verbose) console.error(`GET /${accountId}/ads`);
-
-        const result = await paginateAll<Ad>(
-          `/${accountId}/ads`,
-          token,
-          { params },
+        const result = await listAds(token, {
+          accountId: opts.accountId,
+          adsetId: opts.adsetId,
+          campaignId: opts.campaignId,
+          status: opts.status,
           limit,
-        );
+          after: opts.after,
+        });
 
-        const data = result.data.map((a) => ({
-          id: a.id,
-          name: a.name,
-          adset_id: a.adset_id,
-          campaign_id: a.campaign_id,
-          status: a.status,
-          effective_status: a.effective_status,
-          creative_id: a.creative?.id ?? '',
-          creative_title: a.creative?.title ?? '',
-          creative_body: a.creative?.body ?? '',
-          creative_image_url: a.creative?.image_url ?? '',
-          creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
-          created_time: a.created_time,
-        }));
-
-        printListOutput(data, opts.output, {
+        printListOutput(result.data, opts.output, {
           has_more: result.has_more,
           next_cursor: result.next_cursor,
         });
@@ -120,30 +76,11 @@ export function registerAdsCommands(program: Command): void {
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const params: Record<string, string> = { fields: AD_FIELDS };
 
         if (opts.verbose) console.error(`GET /${opts.adId}`);
 
-        const ad = await graphRequestWithRetry<Ad>(`/${opts.adId}`, token, { params });
-
-        printOutput(
-          {
-            id: ad.id,
-            name: ad.name,
-            adset_id: ad.adset_id,
-            campaign_id: ad.campaign_id,
-            status: ad.status,
-            effective_status: ad.effective_status,
-            creative_id: ad.creative?.id ?? '',
-            creative_title: ad.creative?.title ?? '',
-            creative_body: ad.creative?.body ?? '',
-            creative_image_url: ad.creative?.image_url ?? '',
-            creative_thumbnail_url: ad.creative?.thumbnail_url ?? '',
-            created_time: ad.created_time,
-            updated_time: ad.updated_time,
-          },
-          opts.output,
-        );
+        const ad = await getAd(token, opts.adId);
+        printOutput(ad, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
@@ -178,10 +115,13 @@ export function registerAdsCommands(program: Command): void {
       try {
         const token = requireAccessToken(opts.accessToken);
 
-        const body: Record<string, unknown> = {};
-        if (opts.name) body['name'] = opts.name;
-        if (opts.status) body['status'] = opts.status;
+        const serviceOpts = {
+          adId: opts.adId,
+          name: opts.name,
+          status: opts.status,
+        };
 
+        const body = buildUpdateAdBody(serviceOpts);
         if (Object.keys(body).length === 0) {
           printError({ code: 'USAGE', message: 'No update fields specified. Use --name or --status.' }, opts.output);
           process.exit(EXIT_USAGE);
@@ -204,19 +144,14 @@ export function registerAdsCommands(program: Command): void {
         }
 
         if (opts.dryRun) {
-          printOutput({ dry_run: true, method: 'POST', path: `/${opts.adId}`, body }, opts.output);
+          printOutput(dryRunUpdateAd(serviceOpts), opts.output);
           return;
         }
 
         if (opts.verbose) console.error(`POST /${opts.adId}`);
 
-        const result = await graphRequestWithRetry<{ success: boolean }>(
-          `/${opts.adId}`,
-          token,
-          { method: 'POST', body },
-        );
-
-        printOutput({ ad_id: opts.adId, updated: result.success ?? true, changes: body }, opts.output);
+        const result = await updateAd(token, serviceOpts);
+        printOutput({ ad_id: result.id, updated: result.updated, changes: result.changes }, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
