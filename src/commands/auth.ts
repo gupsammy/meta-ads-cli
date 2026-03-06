@@ -131,6 +131,8 @@ Examples:
             message: 'Logout requires --force in non-interactive mode.',
             hint: 'meta-ads auth logout --force',
           }, opts.output);
+        } else {
+          console.error('Aborted.');
         }
         process.exit(EXIT_USAGE);
       }
