@@ -165,7 +165,14 @@ export async function paginateAll<T>(
   const allData: T[] = [];
   let nextUrl: string | undefined = undefined;
   let currentPath = path;
-  let currentOptions = options;
+
+  // Inject limit into API params so server-side cursors align with page boundaries.
+  const initialParams = { ...(options.params ?? {}) };
+  if (limit && !initialParams['limit']) {
+    initialParams['limit'] = String(limit);
+  }
+  let currentOptions: HttpOptions = { ...options, params: initialParams };
+
   while (true) {
     let response: GraphApiResponse<T>;
     if (nextUrl) {
@@ -181,7 +188,7 @@ export async function paginateAll<T>(
     if (limit && allData.length >= limit) {
       return {
         data: allData.slice(0, limit),
-        has_more: !!response.paging?.next || allData.length > limit,
+        has_more: !!response.paging?.next,
         next_cursor: response.paging?.cursors?.after,
       };
     }
