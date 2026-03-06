@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import nock from 'nock';
-import { graphRequest, HttpError } from '../../lib/http.js';
+import { graphRequest, paginateAll, HttpError } from '../../lib/http.js';
 
 const BASE_URL = 'https://graph.facebook.com';
 const TOKEN = 'test_access_token_123';
@@ -106,5 +106,88 @@ describe('graphRequest', () => {
     });
 
     expect(result.id).toBe('456');
+  });
+});
+
+describe('paginateAll', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should return PaginatedResult with has_more false when no next page', async () => {
+    nock(BASE_URL)
+      .get('/v21.0/act_123/campaigns')
+      .query(true)
+      .reply(200, {
+        data: [{ id: '1' }, { id: '2' }],
+        paging: {
+          cursors: { before: 'a', after: 'b' },
+        },
+      });
+
+    const result = await paginateAll<{ id: string }>('/act_123/campaigns', TOKEN, {
+      params: { fields: 'id' },
+    });
+
+    expect(result.data).toHaveLength(2);
+    expect(result.has_more).toBe(false);
+    expect(result.next_cursor).toBeUndefined();
+  });
+
+  it('should set has_more true and return cursor when limited', async () => {
+    nock(BASE_URL)
+      .get('/v21.0/act_123/campaigns')
+      .query(true)
+      .reply(200, {
+        data: [{ id: '1' }, { id: '2' }, { id: '3' }],
+        paging: {
+          cursors: { before: 'a', after: 'cursor_xyz' },
+          next: 'https://graph.facebook.com/v21.0/act_123/campaigns?after=cursor_xyz',
+        },
+      });
+
+    const result = await paginateAll<{ id: string }>('/act_123/campaigns', TOKEN, {
+      params: { fields: 'id' },
+    }, 2);
+
+    expect(result.data).toHaveLength(2);
+    expect(result.has_more).toBe(true);
+    expect(result.next_cursor).toBe('cursor_xyz');
+  });
+
+  it('should paginate through multiple pages', async () => {
+    nock(BASE_URL)
+      .get('/v21.0/act_123/campaigns')
+      .query(true)
+      .reply(200, {
+        data: [{ id: '1' }],
+        paging: {
+          cursors: { before: 'a', after: 'b' },
+          next: 'https://graph.facebook.com/v21.0/act_123/campaigns?after=b',
+        },
+      });
+
+    nock(BASE_URL)
+      .get('/v21.0/act_123/campaigns')
+      .query(true)
+      .reply(200, {
+        data: [{ id: '2' }],
+        paging: {
+          cursors: { before: 'b', after: 'c' },
+        },
+      });
+
+    const result = await paginateAll<{ id: string }>('/act_123/campaigns', TOKEN, {
+      params: { fields: 'id' },
+    });
+
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0].id).toBe('1');
+    expect(result.data[1].id).toBe('2');
+    expect(result.has_more).toBe(false);
   });
 });
