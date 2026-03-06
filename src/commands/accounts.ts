@@ -1,6 +1,6 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
-import { paginateAll, HttpError } from '../lib/http.js';
+import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
 interface AdAccount {
@@ -37,7 +37,7 @@ export function registerAccountsCommands(program: Command): void {
     .option('--access-token <token>', 'Access token')
     .option('--limit <n>', 'Maximum number of accounts to return')
     .option('--after <cursor>', 'Pagination cursor')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: { accessToken?: string; limit?: string; after?: string; output: OutputFormat; verbose?: boolean }) => {
       try {
@@ -85,7 +85,7 @@ export function registerAccountsCommands(program: Command): void {
     .description('Get details for a specific ad account')
     .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: { accountId: string; accessToken?: string; output: OutputFormat; verbose?: boolean }) => {
       try {
@@ -95,7 +95,6 @@ export function registerAccountsCommands(program: Command): void {
 
         if (opts.verbose) console.error(`GET /${accountId}?fields=${ACCOUNT_FIELDS}`);
 
-        const { graphRequestWithRetry } = await import('../lib/http.js');
         const account = await graphRequestWithRetry<AdAccount>(`/${accountId}`, token, { params });
 
         printOutput(

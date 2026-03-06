@@ -7,11 +7,11 @@ export type OutputFormat = 'json' | 'table' | 'csv';
 export const EXIT_RUNTIME = 1;
 export const EXIT_USAGE = 2;
 
-function isColorDisabled(): boolean {
+function isColorDisabled(stream: NodeJS.WriteStream = process.stdout): boolean {
   return (
     !!process.env['NO_COLOR'] ||
     process.env['TERM'] === 'dumb' ||
-    !process.stdout.isTTY
+    !stream.isTTY
   );
 }
 
@@ -68,6 +68,10 @@ export function getErrorHint(code: string): string | null {
     case 'AUTH_FAILED':
     case 'API_ERROR_190':
       return 'meta-ads auth login --token <token>';
+    case 'API_ERROR_200':
+      return 'Check app permissions in Meta Business Manager';
+    case 'API_ERROR_2635':
+      return 'Check account status in Meta Business Manager';
     case 'RATE_LIMITED':
     case 'API_ERROR_100':
     case 'UNKNOWN':
@@ -113,7 +117,7 @@ function formatTable(rows: Record<string, unknown>[]): string {
   const noColor = isColorDisabled();
   const table = new Table({
     head: keys,
-    style: { head: noColor ? [] : ['cyan'] },
+    style: { head: noColor ? [] : ['cyan'], border: noColor ? [] : undefined },
   });
   for (const row of rows) {
     table.push(keys.map((k) => String(row[k] ?? '')));

@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
@@ -32,7 +32,7 @@ export function registerAdsCommands(program: Command): void {
     .option('--limit <n>', 'Maximum number of ads to return')
     .option('--after <cursor>', 'Pagination cursor')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       accountId: string;
@@ -110,7 +110,7 @@ export function registerAdsCommands(program: Command): void {
     .description('Get details for a specific ad')
     .requiredOption('--ad-id <id>', 'Ad ID')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       adId: string;
@@ -163,7 +163,7 @@ export function registerAdsCommands(program: Command): void {
     .option('--force', 'Skip confirmation for destructive status changes')
     .option('--dry-run', 'Show the request that would be made without executing it')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       adId: string;
@@ -196,6 +196,8 @@ export function registerAdsCommands(program: Command): void {
                 message: 'Destructive status change requires --force in non-interactive mode.',
                 hint: `meta-ads ads update --ad-id ${opts.adId} --status ${opts.status} --force`,
               }, opts.output);
+            } else {
+              console.error('Aborted.');
             }
             process.exit(EXIT_USAGE);
           }

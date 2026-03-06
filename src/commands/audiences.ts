@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
@@ -27,7 +27,7 @@ export function registerAudiencesCommands(program: Command): void {
     .option('--limit <n>', 'Maximum number of audiences to return')
     .option('--after <cursor>', 'Pagination cursor')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       accountId: string;
@@ -84,7 +84,7 @@ export function registerAudiencesCommands(program: Command): void {
     .description('Get details for a specific custom audience')
     .requiredOption('--audience-id <id>', 'Custom audience ID')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       audienceId: string;

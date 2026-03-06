@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import {
   buildOAuthUrl,
   exchangeCodeForToken,
@@ -17,7 +17,7 @@ export function registerAuthCommands(program: Command): void {
     .description('Authenticate with Meta via OAuth2 or access token')
     .option('--app-id <id>', 'Meta App ID')
     .option('--token <token>', 'Access token (use - to read from stdin)')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .addHelpText('after', `
 Examples:
   $ meta-ads auth login --token EAAx...
@@ -103,7 +103,7 @@ Examples:
   auth
     .command('status')
     .description('Show current authentication status')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .action((opts: { output: OutputFormat }) => {
       const status = getAuthStatus();
       printOutput(
@@ -121,7 +121,7 @@ Examples:
     .command('logout')
     .description('Remove stored credentials')
     .option('--force', 'Skip confirmation')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .action(async (opts: { force?: boolean; output: OutputFormat }) => {
       const confirmed = await confirmAction('Remove credentials?', opts.force);
       if (!confirmed) {

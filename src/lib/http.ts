@@ -195,8 +195,6 @@ export async function paginateAll<T>(
 
     if (response.paging?.next) {
       nextUrl = response.paging.next;
-      currentPath = '';
-      currentOptions = {};
     } else {
       break;
     }

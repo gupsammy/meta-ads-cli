@@ -159,6 +159,24 @@ describe('paginateAll', () => {
     expect(result.next_cursor).toBe('cursor_xyz');
   });
 
+  it('should forward after cursor from options.params to API request', async () => {
+    nock(BASE_URL)
+      .get('/v21.0/act_123/campaigns')
+      .query({ fields: 'id', after: 'cursor_page2', limit: '10' })
+      .reply(200, {
+        data: [{ id: '3' }, { id: '4' }],
+        paging: { cursors: { before: 'b', after: 'cursor_page3' } },
+      });
+
+    const result = await paginateAll<{ id: string }>('/act_123/campaigns', TOKEN, {
+      params: { fields: 'id', after: 'cursor_page2' },
+    }, 10);
+
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0].id).toBe('3');
+    expect(result.has_more).toBe(false);
+  });
+
   it('should paginate through multiple pages', async () => {
     nock(BASE_URL)
       .get('/v21.0/act_123/campaigns')

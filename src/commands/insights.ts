@@ -1,7 +1,7 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
 import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
-import { printOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
+import { printListOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
 type InsightRow = Record<string, unknown>;
 
@@ -28,12 +28,12 @@ export function registerInsightsCommands(program: Command): void {
     .option('--date-preset <preset>', `Date preset (${DATE_PRESETS.slice(0, 5).join(', ')}...)`)
     .option('--since <date>', 'Start date (YYYY-MM-DD)')
     .option('--until <date>', 'End date (YYYY-MM-DD)')
-    .option('--level <level>', 'Breakdown level (account, campaign, adset, ad)', 'account')
+    .option('--level <level>', 'Breakdown level (account, campaign, adset, ad); defaults to match the ID flag used')
     .option('--fields <fields>', 'Comma-separated fields to request (use --verbose --help to see defaults)')
     .option('--time-increment <n>', 'Time increment in days (1 for daily breakdown)')
     .option('--limit <n>', 'Maximum number of rows to return')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .addHelpText('after', `
 Examples:
@@ -75,8 +75,16 @@ Examples:
           process.exit(EXIT_USAGE);
         }
 
+        if ((opts.since && !opts.until) || (!opts.since && opts.until)) {
+          printError({ code: 'USAGE', message: '--since and --until must both be specified together' }, opts.output);
+          process.exit(EXIT_USAGE);
+        }
+
+        const level = opts.level ?? (opts.adId ? 'ad' : opts.adsetId ? 'adset' : opts.campaignId ? 'campaign' : 'account');
+
         const params: Record<string, string> = {
           fields: opts.fields ?? INSIGHT_FIELDS,
+          level,
         };
 
         if (opts.datePreset) {
@@ -84,9 +92,6 @@ Examples:
         }
         if (opts.since && opts.until) {
           params['time_range'] = JSON.stringify({ since: opts.since, until: opts.until });
-        }
-        if (opts.level) {
-          params['level'] = opts.level;
         }
         if (opts.timeIncrement) {
           params['time_increment'] = opts.timeIncrement;
@@ -105,7 +110,7 @@ Examples:
 
         const data = response.data ?? [];
 
-        printOutput(data, opts.output);
+        printListOutput(data, opts.output);
       } catch (error) {
         if (error instanceof HttpError) {
           printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);

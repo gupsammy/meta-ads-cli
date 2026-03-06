@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { requireAccessToken } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
@@ -32,7 +32,7 @@ export function registerCampaignsCommands(program: Command): void {
     .option('--limit <n>', 'Maximum number of campaigns to return')
     .option('--after <cursor>', 'Pagination cursor')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .addHelpText('after', `
 Examples:
@@ -101,7 +101,7 @@ Examples:
     .description('Get details for a specific campaign')
     .requiredOption('--campaign-id <id>', 'Campaign ID')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       campaignId: string;
@@ -155,7 +155,7 @@ Examples:
     .option('--special-ad-categories <categories>', 'Special ad categories (comma-separated: CREDIT, EMPLOYMENT, HOUSING, ISSUES_ELECTIONS_POLITICS)', '')
     .option('--dry-run', 'Show the request that would be made without executing it')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
       accountId: string;
@@ -221,7 +221,7 @@ Examples:
     .option('--force', 'Skip confirmation for destructive status changes')
     .option('--dry-run', 'Show the request that would be made without executing it')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
+    .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .addHelpText('after', `
 Examples:
@@ -264,6 +264,8 @@ Examples:
                 message: 'Destructive status change requires --force in non-interactive mode.',
                 hint: `meta-ads campaigns update --campaign-id ${opts.campaignId} --status ${opts.status} --force`,
               }, opts.output);
+            } else {
+              console.error('Aborted.');
             }
             process.exit(EXIT_USAGE);
           }
