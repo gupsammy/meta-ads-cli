@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { requireAccessToken } from '../auth.js';
 import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
-import { printOutput, printError, type OutputFormat } from '../lib/output.js';
+import { printOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
 type InsightRow = Record<string, unknown>;
 
@@ -29,13 +29,18 @@ export function registerInsightsCommands(program: Command): void {
     .option('--since <date>', 'Start date (YYYY-MM-DD)')
     .option('--until <date>', 'End date (YYYY-MM-DD)')
     .option('--level <level>', 'Breakdown level (account, campaign, adset, ad)', 'account')
-    .option('--fields <fields>', 'Comma-separated fields to request', INSIGHT_FIELDS)
+    .option('--fields <fields>', 'Comma-separated fields to request (use --verbose --help to see defaults)')
     .option('--time-increment <n>', 'Time increment in days (1 for daily breakdown)')
     .option('--limit <n>', 'Maximum number of rows to return')
     .option('--access-token <token>', 'Access token')
-    .option('-o, --output <format>', 'Output format (json, table, csv)', 'json')
-    .option('-q, --quiet', 'Suppress non-essential output')
+    .option('-o, --output <format>', 'Output format (json, table, csv)', 'table')
     .option('-v, --verbose', 'Enable verbose output')
+    .addHelpText('after', `
+Examples:
+  $ meta-ads insights get --account-id act_123456 --date-preset last_30d
+  $ meta-ads insights get --account-id act_123456 --since 2024-01-01 --until 2024-01-31 --level campaign
+  $ meta-ads insights get --campaign-id 123 --time-increment 1 -o json
+`)
     .action(async (opts: {
       accountId?: string;
       campaignId?: string;
@@ -50,7 +55,6 @@ export function registerInsightsCommands(program: Command): void {
       limit?: string;
       accessToken?: string;
       output: OutputFormat;
-      quiet?: boolean;
       verbose?: boolean;
     }) => {
       try {
@@ -67,8 +71,8 @@ export function registerInsightsCommands(program: Command): void {
           const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
           basePath = `/${accountId}/insights`;
         } else {
-          console.error('Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id');
-          process.exit(1);
+          printError({ code: 'USAGE', message: 'Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id' }, opts.output);
+          process.exit(EXIT_USAGE);
         }
 
         const params: Record<string, string> = {
@@ -108,7 +112,7 @@ export function registerInsightsCommands(program: Command): void {
         } else {
           printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
         }
-        process.exit(1);
+        process.exit(EXIT_RUNTIME);
       }
     });
 }

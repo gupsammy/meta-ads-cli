@@ -150,17 +150,22 @@ export async function graphRequestWithRetry<T>(
   throw lastError;
 }
 
+export interface PaginatedResult<T> {
+  data: T[];
+  has_more: boolean;
+  next_cursor?: string;
+}
+
 export async function paginateAll<T>(
   path: string,
   accessToken: string,
   options: HttpOptions = {},
   limit?: number,
-): Promise<T[]> {
+): Promise<PaginatedResult<T>> {
   const allData: T[] = [];
   let nextUrl: string | undefined = undefined;
   let currentPath = path;
   let currentOptions = options;
-
   while (true) {
     let response: GraphApiResponse<T>;
     if (nextUrl) {
@@ -174,7 +179,11 @@ export async function paginateAll<T>(
     }
 
     if (limit && allData.length >= limit) {
-      return allData.slice(0, limit);
+      return {
+        data: allData.slice(0, limit),
+        has_more: !!response.paging?.next || allData.length > limit,
+        next_cursor: response.paging?.cursors?.after,
+      };
     }
 
     if (response.paging?.next) {
@@ -186,5 +195,9 @@ export async function paginateAll<T>(
     }
   }
 
-  return allData;
+  return {
+    data: allData,
+    has_more: false,
+    next_cursor: undefined,
+  };
 }

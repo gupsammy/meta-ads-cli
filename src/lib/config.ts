@@ -16,7 +16,8 @@ export class ConfigManager {
   private configDir: string;
 
   constructor(toolName: string) {
-    this.configDir = join(homedir(), '.config', `${toolName}-cli`);
+    const configBase = process.env['XDG_CONFIG_HOME'] || join(homedir(), '.config');
+    this.configDir = join(configBase, `${toolName}-cli`);
     this.configPath = join(this.configDir, 'config.json');
   }
 
