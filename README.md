@@ -44,11 +44,11 @@ npm install -g meta-ads
 meta-ads setup
 ```
 
-### npx (Try without installing)
+### npx (Try without installing, requires Node.js >= 20)
 
 ```bash
-npx meta-ads setup
-npx meta-ads accounts list
+npx meta-ads accounts list --access-token YOUR_TOKEN
+npx meta-ads insights get --account-id act_123 --date-preset last_7d --access-token YOUR_TOKEN
 ```
 
 Note: with npx you must prefix every command with `npx`.
