@@ -14,8 +14,8 @@ set -e
 # Usage: analyze-creatives.sh [input-file]
 #        Default input: $META_ADS_DATA_DIR/_period/creative-targets.json
 
-DATA_DIR="${META_ADS_DATA_DIR:-/tmp/meta-ads-intel}"
-CREATIVES_DIR="$DATA_DIR/_period/creatives"
+export DATA_DIR="${META_ADS_DATA_DIR:-/tmp/meta-ads-intel}"
+export CREATIVES_DIR="$DATA_DIR/_period/creatives"
 CREATIVES_MASTER="$DATA_DIR/creatives-master.json"
 CONFIG_FILE="$HOME/.config/meta-ads-cli/config.json"
 API_VERSION="v21.0"
@@ -40,7 +40,7 @@ else
 fi
 
 # Input file
-INPUT_FILE="${1:-$DATA_DIR/_period/creative-targets.json}"
+export INPUT_FILE="${1:-$DATA_DIR/_period/creative-targets.json}"
 if [[ ! -f "$INPUT_FILE" ]]; then
   echo "Error: Input file not found: $INPUT_FILE" >&2
   echo "The skill should write creative-targets.json before calling this script." >&2
@@ -84,7 +84,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
   API_ERROR=$(echo "$CREATIVE_JSON" | jq -r '.error.message // empty')
   if [[ -n "$API_ERROR" ]]; then
     echo "    WARNING: API error: $API_ERROR"
-    echo "{\"error\": \"api_error\", \"message\": \"$API_ERROR\"}" > "$AD_DIR/metadata.json"
+    jq -n --arg msg "$API_ERROR" '{"error": "api_error", "message": $msg}' > "$AD_DIR/metadata.json"
     continue
   fi
 
