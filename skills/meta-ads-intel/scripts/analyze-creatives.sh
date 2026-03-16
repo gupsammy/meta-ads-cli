@@ -77,7 +77,8 @@ for i in $(seq 0 $((TOTAL - 1))); do
     continue
   fi
 
-  # Fetch creative details from Meta API
+  # Fetch creative details from Meta API.
+  # Note: token appears in process list during curl execution — ephemeral and host-local.
   CREATIVE_JSON=$(curl -s "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url&access_token=$TOKEN")
 
   # Check for API errors

@@ -97,7 +97,8 @@ pull_day() {
     -o json > "$day_dir/ads.json"
   warn_if_truncated "$day_dir/ads.json" "ads"
 
-  # Ad creatives (not date-scoped — pull once, reuse)
+  # Ad creatives (not date-scoped — pull once, reuse).
+  # To refresh after adding new ads: delete creatives-master.json and re-run.
   if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
     "$CLI" ads list \
       --account-id "$ACCOUNT_ID" \

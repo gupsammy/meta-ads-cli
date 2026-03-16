@@ -32,6 +32,11 @@ Before first use, configure `references/thresholds.md`:
 
 Authentication: `meta-ads auth login --token <token>` or `META_ADS_ACCESS_TOKEN` env var.
 
+Data storage defaults to `/tmp/meta-ads-intel/` (cleared on reboot). For persistent data across sessions:
+```bash
+export META_ADS_DATA_DIR=~/.meta-ads-intel-data
+```
+
 ## Process
 
 ### 1. Load Configuration
@@ -45,6 +50,7 @@ Read `references/brand-copy.md` for copy psychology framework and brand context.
 ```bash
 bash <skill-dir>/scripts/pull-data.sh $ARGUMENTS
 ```
+`<skill-dir>` is the directory containing this SKILL.md. Resolve it from this file's path at runtime.
 
 If script fails (auth expired, network), report error and stop.
 
@@ -96,6 +102,7 @@ Write `creative-targets.json` with top 5 and bottom 5 ads by ROAS.
 ```bash
 bash <skill-dir>/scripts/analyze-creatives.sh
 ```
+`<skill-dir>` — same as Step 2.
 
 Read extracted frames via Read tool. Compare visual patterns: hooks, text overlays, color palettes, product visibility across winners vs losers.
 
