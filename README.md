@@ -21,33 +21,37 @@
 
 ## Installation
 
-### One-line install (macOS / Linux / WSL)
+### One-line install (Recommended)
+
+**macOS / Linux / WSL:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.sh | bash
 ```
 
-This detects your environment, installs Node.js via fnm if needed, installs the CLI globally, and launches the setup wizard.
-
-### npm
-
-```bash
-npm install -g meta-ads
-```
-
-### npx (no install)
-
-```bash
-npx meta-ads --help
-```
-
-### Windows (PowerShell)
+**Windows (PowerShell):**
 
 ```powershell
 irm https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.ps1 | iex
 ```
 
-Requires Node.js >= 20. The installers handle this automatically.
+Handles everything: installs Node.js if needed, installs the CLI globally, and walks you through authentication and account setup.
+
+### npm (If you already have Node.js >= 20)
+
+```bash
+npm install -g meta-ads
+meta-ads setup
+```
+
+### npx (Try without installing)
+
+```bash
+npx meta-ads setup
+npx meta-ads accounts list
+```
+
+Note: with npx you must prefix every command with `npx`.
 
 ## Quick Start
 
