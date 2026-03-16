@@ -1,0 +1,64 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Triage issue with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_non_write_users: "*"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          track_progress: true
+          prompt: |
+            You are triaging a new issue for meta-ads-cli, a TypeScript CLI that wraps
+            the Meta Marketing API v21.0.
+
+            Read CLAUDE.md to understand the project structure and conventions.
+
+            Then analyze the issue and:
+
+            1. **Classify** the issue into one of these categories and apply the
+               corresponding label:
+               - `bug` — Something is broken or behaving incorrectly
+               - `enhancement` — New feature or improvement request
+               - `question` — User needs help or clarification
+               - `auth` — Related to authentication, tokens, or OAuth flow
+               - `api` — Related to Meta API behavior, rate limits, or responses
+               - `cli-ux` — Related to CLI flags, output formatting, or user experience
+               - `docs` — Documentation improvement needed
+
+            2. **Assess priority** based on impact:
+               - `priority: high` — Auth failures, data loss, crashes, security issues
+               - `priority: medium` — Incorrect API responses, broken commands, missing validation
+               - `priority: low` — Cosmetic issues, minor UX improvements, docs
+
+            3. **Add a helpful comment** that:
+               - Acknowledges the issue
+               - If it's a bug: suggest diagnostic steps (e.g., "try running with --verbose",
+                 "check `meta-ads auth status`", "which Node version?")
+               - If it's a question: answer it if possible using CLAUDE.md and the codebase,
+                 or point to the relevant command/flag
+               - If it's an enhancement: note whether it aligns with existing architecture
+               - If it looks like a duplicate, search existing issues with
+                 `gh issue list --search "keywords"` and link to the original
+
+            Apply labels using `gh issue edit <number> --add-label "label1,label2"`.
+          claude_args: >-
+            --allowedTools "Read,Glob,Grep,Bash(gh issue:*),Bash(gh label:*)"
