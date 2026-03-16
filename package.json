@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "pnpm run build",
+    "postinstall": "node -e \"console.log('\\n  Run: meta-ads setup  to configure your account.\\n')\""
   },
   "files": [
     "dist"

@@ -31,6 +31,26 @@ export function requireAccessToken(flagValue?: string): string {
   return token;
 }
 
+export function resolveAccountId(flagValue?: string): string | undefined {
+  if (flagValue) return flagValue.startsWith('act_') ? flagValue : `act_${flagValue}`;
+  const configVal = config.getDefault('account_id');
+  if (configVal) return configVal.startsWith('act_') ? configVal : `act_${configVal}`;
+  return undefined;
+}
+
+export function requireAccountId(flagValue?: string): string {
+  const accountId = resolveAccountId(flagValue);
+  if (!accountId) {
+    console.error(
+      `No account ID found. Provide one via:\n` +
+        `  1. --account-id flag\n` +
+        `  2. Config default (run: meta-ads setup)`,
+    );
+    process.exit(1);
+  }
+  return accountId;
+}
+
 export function getAuthStatus(): { authenticated: boolean; configPath: string; hasToken: boolean; hasAppId: boolean } {
   const cfg = config.read();
   return {

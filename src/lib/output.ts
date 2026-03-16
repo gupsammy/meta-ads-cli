@@ -112,6 +112,17 @@ export async function confirmAction(message: string, force?: boolean): Promise<b
   });
 }
 
+export async function promptInput(message: string): Promise<string> {
+  if (!process.stdin.isTTY) return '';
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise((resolve) => {
+    rl.question(message, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
 function formatTable(rows: Record<string, unknown>[]): string {
   if (rows.length === 0) return 'No data';
   const keys = Object.keys(rows[0]);

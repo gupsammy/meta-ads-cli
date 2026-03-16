@@ -7,6 +7,8 @@ const TOKEN = 'test_access_token_123';
 vi.mock('../../auth.js', () => ({
   requireAccessToken: () => TOKEN,
   resolveAccessToken: () => TOKEN,
+  requireAccountId: (v?: string) => v?.startsWith('act_') ? v : `act_${v}`,
+  resolveAccountId: (v?: string) => v ? (v.startsWith('act_') ? v : `act_${v}`) : undefined,
 }));
 
 describe('audiences API integration', () => {
