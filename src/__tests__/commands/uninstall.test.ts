@@ -1,18 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Command } from 'commander';
 
 const TOKEN = 'test_access_token_123';
 
-const mockConfig = {
-  read: vi.fn().mockReturnValue({}),
-  write: vi.fn(),
-  getDefault: vi.fn().mockReturnValue(undefined),
-  setDefault: vi.fn(),
-  getConfigPath: vi.fn().mockReturnValue('/mock/config.json'),
-  getConfigDir: vi.fn().mockReturnValue('/mock/meta-ads-cli'),
-};
-
 vi.mock('../../lib/config.js', () => ({
-  ConfigManager: vi.fn().mockImplementation(() => mockConfig),
+  ConfigManager: vi.fn().mockImplementation(() => ({
+    read: () => ({}),
+    write: vi.fn(),
+    getDefault: () => undefined,
+    setDefault: vi.fn(),
+    getConfigPath: () => '/mock/config.json',
+    getConfigDir: () => '/mock/meta-ads-cli',
+  })),
 }));
 
 vi.mock('../../auth.js', () => ({
@@ -22,20 +21,53 @@ vi.mock('../../auth.js', () => ({
   resolveAccountId: (v?: string) => v ? (v.startsWith('act_') ? v : `act_${v}`) : undefined,
 }));
 
+import { registerUninstallCommand } from '../../commands/uninstall.js';
+
 describe('uninstall command', () => {
-  it('should provide config directory path', () => {
-    expect(mockConfig.getConfigDir()).toBe('/mock/meta-ads-cli');
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  it('should have force and keep-config options defined', async () => {
-    // Verify the command module can be imported without errors
-    const { registerUninstallCommand } = await import('../../commands/uninstall.js');
-    expect(registerUninstallCommand).toBeDefined();
-    expect(typeof registerUninstallCommand).toBe('function');
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('should have confirmAction available for prompts', async () => {
-    const { confirmAction } = await import('../../lib/output.js');
-    expect(typeof confirmAction).toBe('function');
+  it('should exit with USAGE code when not confirmed in non-TTY', async () => {
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+
+    const program = new Command();
+    program.exitOverride();
+    registerUninstallCommand(program);
+
+    await program.parseAsync(['node', 'meta-ads', 'uninstall']);
+    expect(exitSpy).toHaveBeenCalledWith(2);
+
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+  });
+
+  it('should register with correct options', () => {
+    const program = new Command();
+    registerUninstallCommand(program);
+
+    const cmd = program.commands.find(c => c.name() === 'uninstall');
+    expect(cmd).toBeDefined();
+
+    const optionNames = cmd!.options.map(o => o.long);
+    expect(optionNames).toContain('--keep-config');
+    expect(optionNames).toContain('--force');
+  });
+
+  it('should register with correct description', () => {
+    const program = new Command();
+    registerUninstallCommand(program);
+
+    const cmd = program.commands.find(c => c.name() === 'uninstall');
+    expect(cmd).toBeDefined();
+    expect(cmd!.description()).toBe('Uninstall meta-ads-cli');
   });
 });

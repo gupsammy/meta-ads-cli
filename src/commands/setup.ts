@@ -171,10 +171,21 @@ async function setupAuth(format: OutputFormat): Promise<string> {
 }
 
 async function checkTokenLongevity(token: string): Promise<void> {
+  const appSecret = process.env['META_ADS_APP_SECRET'];
+  const appId = process.env['META_ADS_APP_ID'];
+
+  if (!appId || !appSecret) {
+    console.error('  Token expiry check requires META_ADS_APP_ID and META_ADS_APP_SECRET.');
+    console.error('  Set these env vars and re-run setup to check token lifetime.\n');
+    return;
+  }
+
   try {
+    // /debug_token requires an app access token (APP_ID|APP_SECRET), not a user token
+    const appAccessToken = `${appId}|${appSecret}`;
     const debugInfo = await graphRequestWithRetry<TokenDebugInfo>(
       '/debug_token',
-      token,
+      appAccessToken,
       { params: { input_token: token } },
     );
 
@@ -189,27 +200,18 @@ async function checkTokenLongevity(token: string): Promise<void> {
       // Short-lived token (< 2 hours)
       console.error(`  Warning: this token expires in ${Math.max(0, Math.floor(expiresIn / 60))} minutes.`);
 
-      const appSecret = process.env['META_ADS_APP_SECRET'];
-      const appId = process.env['META_ADS_APP_ID'];
-
-      if (appSecret && appId) {
-        const exchange = await confirmAction('  Exchange for a long-lived token (60 days)?');
-        if (exchange) {
-          const result = await exchangeForLongLivedToken(token, appId, appSecret);
-          saveToken(result.access_token);
-          console.error('  Exchanged for long-lived token (60 days).\n');
-          return;
-        }
-      } else {
-        console.error('  For a long-lived token (60 days), set META_ADS_APP_ID and');
-        console.error('  META_ADS_APP_SECRET environment variables, then re-run setup.\n');
+      const exchange = await confirmAction('  Exchange for a long-lived token (60 days)?');
+      if (exchange) {
+        const result = await exchangeForLongLivedToken(token, appId, appSecret);
+        saveToken(result.access_token);
+        console.error('  Exchanged for long-lived token (60 days).\n');
+        return;
       }
     } else {
       const days = Math.floor(expiresIn / 86400);
       console.error(`  Token expires in ${days} day${days !== 1 ? 's' : ''}.\n`);
     }
   } catch {
-    // debug_token may fail with certain token types — non-fatal
     console.error('  Could not check token expiry (non-fatal).\n');
   }
 }

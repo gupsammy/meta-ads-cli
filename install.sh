@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # meta-ads-cli installer for macOS / Linux / WSL
-# Usage: curl -fsSL https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.sh | bash
 
 REQUIRED_NODE_MAJOR=20
 FNM_INSTALL_URL="https://fnm.vercel.app/install"

@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { ConfigManager } from '../lib/config.js';
 import { printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
@@ -46,13 +46,13 @@ export function registerUninstallCommand(program: Command): void {
         console.error('Uninstalling...');
 
         await new Promise<void>((resolve, reject) => {
-          execFile('npm', ['uninstall', '-g', PACKAGE_NAME], (error, _stdout, stderr) => {
-            if (error) {
-              reject(new Error(`Uninstall failed: ${stderr || error.message}`));
-              return;
-            }
-            resolve();
+          // shell: true resolves npm.cmd on Windows
+          const child = spawn('npm', ['uninstall', '-g', PACKAGE_NAME], { shell: true, stdio: 'inherit' });
+          child.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`npm exited with code ${code}`));
           });
+          child.on('error', (err) => reject(new Error(`Failed to run npm: ${err.message}`)));
         });
 
         printOutput({ status: 'uninstalled', message: 'meta-ads-cli has been uninstalled.' }, opts.output);

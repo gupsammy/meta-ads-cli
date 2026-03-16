@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { ConfigManager } from './lib/config.js';
+import { EXIT_USAGE } from './lib/output.js';
 
 const config = new ConfigManager('meta-ads');
 
@@ -46,7 +47,7 @@ export function requireAccountId(flagValue?: string): string {
         `  1. --account-id flag\n` +
         `  2. Config default (run: meta-ads setup)`,
     );
-    process.exit(1);
+    process.exit(EXIT_USAGE);
   }
   return accountId;
 }

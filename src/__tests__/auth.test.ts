@@ -65,7 +65,7 @@ describe('requireAccountId', () => {
 
   it('should exit when no flag and no config', () => {
     requireAccountId();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 
   it('should return config default when no flag', () => {

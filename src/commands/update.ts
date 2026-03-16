@@ -1,9 +1,13 @@
 import { Command, Option } from 'commander';
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
 const PACKAGE_NAME = 'meta-ads-cli';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
+
+function normalizeVersion(v: string): string {
+  return v.replace(/^v/, '');
+}
 
 export function registerUpdateCommand(program: Command): void {
   program
@@ -13,10 +17,10 @@ export function registerUpdateCommand(program: Command): void {
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .action(async (opts: { check?: boolean; output: OutputFormat }) => {
       try {
-        const currentVersion = program.version() ?? '0.0.0';
+        const currentVersion = normalizeVersion(program.version() ?? '0.0.0');
 
         console.error('Checking for updates...');
-        const latestVersion = await fetchLatestVersion();
+        const latestVersion = normalizeVersion(await fetchLatestVersion());
 
         if (latestVersion === currentVersion) {
           printOutput({ current_version: currentVersion, latest_version: latestVersion, status: 'up_to_date' }, opts.output);
@@ -35,16 +39,7 @@ export function registerUpdateCommand(program: Command): void {
 
         console.error(`Updating ${currentVersion} -> ${latestVersion}...`);
 
-        await new Promise<void>((resolve, reject) => {
-          execFile('npm', ['install', '-g', `${PACKAGE_NAME}@latest`], (error, stdout, stderr) => {
-            if (error) {
-              reject(new Error(`Update failed: ${stderr || error.message}`));
-              return;
-            }
-            if (stdout) console.error(stdout.trim());
-            resolve();
-          });
-        });
+        await runNpm(['install', '-g', `${PACKAGE_NAME}@latest`]);
 
         printOutput({
           previous_version: currentVersion,
@@ -57,6 +52,18 @@ export function registerUpdateCommand(program: Command): void {
         process.exit(EXIT_RUNTIME);
       }
     });
+}
+
+function runNpm(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // shell: true resolves npm.cmd on Windows
+    const child = spawn('npm', args, { shell: true, stdio: 'inherit' });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`npm exited with code ${code}`));
+    });
+    child.on('error', (err) => reject(new Error(`Failed to run npm: ${err.message}`)));
+  });
 }
 
 async function fetchLatestVersion(): Promise<string> {
