@@ -124,7 +124,7 @@ function Ensure-Npm {
 
 function Install-Cli {
     Write-Info "Installing meta-ads-cli via npm..."
-    npm install -g meta-ads-cli
+    npm install -g meta-ads
     Write-Ok "meta-ads-cli installed."
 }
 

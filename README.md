@@ -1,201 +1,239 @@
-# meta-ads-cli
+<div align="center">
 
-[![CI](https://github.com/gupsammy/meta-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gupsammy/meta-ads-cli/actions)
+<h1>meta-ads</h1>
+
+<p>Command-line interface for the Meta (Facebook) Marketing API.<br/>Manage campaigns, ad sets, ads, insights, and audiences from your terminal.</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/meta-ads.svg)](https://www.npmjs.com/package/meta-ads)
 
-Command-line interface for the Meta (Facebook) Marketing API. Manage campaigns, ad sets, ads, insights, and audiences from your terminal.
+</div>
 
-## Install
+## Features
 
-This is a source-only fork. Build and link it locally:
+- Manage campaigns, ad sets, ads, and custom audiences from one CLI
+- Pull performance insights with flexible date ranges, breakdowns, and levels
+- Three output formats: table (human), JSON (machine), CSV (spreadsheets)
+- Built-in retry with exponential backoff for rate limits and transient errors
+- Interactive onboarding wizard (`meta-ads setup`) — zero to working CLI in one session
+- Default account ID — configure once, skip `--account-id` on every command
+- Self-update (`meta-ads update`) and clean uninstall (`meta-ads uninstall`)
+
+## Installation
+
+### One-line install (macOS / Linux / WSL)
 
 ```bash
-git clone https://github.com/gupsammy/meta-ads-cli.git
-cd meta-ads-cli
-pnpm install
-pnpm build
-npm link   # makes `meta-ads` available globally
+curl -fsSL https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.sh | bash
 ```
+
+This detects your environment, installs Node.js via fnm if needed, installs the CLI globally, and launches the setup wizard.
+
+### npm
+
+```bash
+npm install -g meta-ads
+```
+
+### npx (no install)
+
+```bash
+npx meta-ads --help
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.ps1 | iex
+```
+
+Requires Node.js >= 20. The installers handle this automatically.
 
 ## Quick Start
 
 ```bash
-# Authenticate with a token
+# Run the interactive setup wizard
+meta-ads setup
+
+# Or configure non-interactively
 meta-ads auth login --token YOUR_ACCESS_TOKEN
+meta-ads setup --skip-auth --account-id act_123456
 
-# Or use OAuth2 flow (requires Meta App credentials via env vars)
-export META_ADS_APP_ID=YOUR_APP_ID
-export META_ADS_APP_SECRET=YOUR_APP_SECRET
-meta-ads auth login --app-id $META_ADS_APP_ID
-
-# List ad accounts (default output: table)
+# List your ad accounts
 meta-ads accounts list
 
-# List campaigns for an account
-meta-ads campaigns list --account-id act_123456
+# List campaigns (uses your default account)
+meta-ads campaigns list
 
-# Get campaign insights for the last 30 days
-meta-ads insights get --account-id act_123456 --date-preset last_30d
+# Get insights for the last 30 days
+meta-ads insights get --date-preset last_30d
 
-# Create a new campaign (paused by default)
-meta-ads campaigns create --account-id act_123456 --name "My Campaign" --objective OUTCOME_TRAFFIC
+# Create a campaign (paused by default)
+meta-ads campaigns create --name "Q2 Traffic" --objective OUTCOME_TRAFFIC
 ```
 
 ## Authentication
 
-meta-ads-cli supports three authentication methods (in priority order):
+meta-ads supports three authentication methods, checked in this order:
 
 ### 1. Per-command flag
+
 ```bash
 meta-ads accounts list --access-token YOUR_TOKEN
 ```
 
 ### 2. Environment variable
+
 ```bash
 export META_ADS_ACCESS_TOKEN=YOUR_TOKEN
 meta-ads accounts list
 ```
 
-### 3. Config file (saved via `auth login`)
+### 3. Config file (saved via `auth login` or `setup`)
+
 ```bash
-# Save a token to the config file
 meta-ads auth login --token YOUR_TOKEN
-
-# OAuth2 flow — app secret must be in the environment, not a CLI flag
-export META_ADS_APP_SECRET=YOUR_APP_SECRET
-meta-ads auth login --app-id YOUR_APP_ID
-
-# Check auth status
 meta-ads auth status
 ```
 
-The config file is stored at `~/.config/meta-ads-cli/config.json` (or `$XDG_CONFIG_HOME/meta-ads-cli/config.json` if set).
-
-> **Security note:** Passing tokens as CLI flags leaks them into shell history and process listings. Prefer environment variables or stdin: `echo $TOKEN | meta-ads auth login --token -`
+Config is stored at `~/.config/meta-ads-cli/config.json` with `0600` permissions (owner-only).
 
 ### Getting an access token
 
 1. Go to [Meta for Developers](https://developers.facebook.com/) and create an app
-2. In the App Dashboard, go to Tools > Graph API Explorer
-3. Select your app and generate a User Token with `ads_management` and `ads_read` permissions
-4. Use `meta-ads auth login --token <your-token>` to save it
+2. Open Tools > Graph API Explorer
+3. Generate a User Token with `ads_management` and `ads_read` permissions
+4. Run `meta-ads setup` and paste the token when prompted
 
-For long-lived tokens, use the full OAuth2 flow with `--app-id` and `META_ADS_APP_SECRET`.
+For long-lived tokens, set `META_ADS_APP_SECRET` in your environment and the setup wizard will offer to exchange your short-lived token automatically.
 
 ## Command Reference
 
 ### auth
+
 ```bash
 meta-ads auth login [--token <token>] [--app-id <id>]   # app secret via META_ADS_APP_SECRET
-meta-ads auth status
+meta-ads auth status [-o json]
 meta-ads auth logout [--force]
 ```
 
+### setup
+
+```bash
+meta-ads setup                                            # interactive wizard
+meta-ads setup --non-interactive --token <t>              # scripted setup
+meta-ads setup --skip-auth --account-id <id>              # set default account only
+```
+
 ### accounts
+
 ```bash
 meta-ads accounts list [--limit <n>] [--after <cursor>]
 meta-ads accounts get --account-id <id>
 ```
 
 ### campaigns
+
 ```bash
-meta-ads campaigns list --account-id <id> [--status <status>] [--limit <n>] [--after <cursor>]
+meta-ads campaigns list [--account-id <id>] [--status <status>] [--limit <n>]
 meta-ads campaigns get --campaign-id <id>
-meta-ads campaigns create --account-id <id> --name <name> --objective <objective> [--status <status>] [--daily-budget <cents>] [--lifetime-budget <cents>] [--special-ad-categories <cats>] [--dry-run]
-meta-ads campaigns update --campaign-id <id> [--name <name>] [--status <status>] [--daily-budget <cents>] [--dry-run] [--force]
+meta-ads campaigns create [--account-id <id>] --name <name> --objective <obj> [--daily-budget <cents>] [--dry-run]
+meta-ads campaigns update --campaign-id <id> [--name <name>] [--status <status>] [--force]
 ```
 
-**Objectives:** `OUTCOME_AWARENESS`, `OUTCOME_TRAFFIC`, `OUTCOME_ENGAGEMENT`, `OUTCOME_LEADS`, `OUTCOME_APP_PROMOTION`, `OUTCOME_SALES`
-
-**Statuses:** `ACTIVE`, `PAUSED`, `DELETED`, `ARCHIVED`
-
-**Special ad categories:** `CREDIT`, `EMPLOYMENT`, `HOUSING`, `ISSUES_ELECTIONS_POLITICS` (comma-separated)
-
-> Updating to `PAUSED`, `DELETED`, or `ARCHIVED` prompts for confirmation. Use `--force` to skip in non-interactive (CI/pipeline) contexts.
+Objectives: `OUTCOME_AWARENESS`, `OUTCOME_TRAFFIC`, `OUTCOME_ENGAGEMENT`, `OUTCOME_LEADS`, `OUTCOME_APP_PROMOTION`, `OUTCOME_SALES`
 
 ### adsets
+
 ```bash
-meta-ads adsets list --account-id <id> [--campaign-id <id>] [--status <status>] [--limit <n>] [--after <cursor>]
+meta-ads adsets list [--account-id <id>] [--campaign-id <id>] [--status <status>]
 meta-ads adsets get --adset-id <id>
-meta-ads adsets create --account-id <id> --campaign-id <id> --name <name> --billing-event <event> --optimization-goal <goal> [--daily-budget <cents>] [--lifetime-budget <cents>] [--bid-amount <cents>] [--targeting <json>] [--start-time <iso8601>] [--end-time <iso8601>] [--dry-run]
-meta-ads adsets update --adset-id <id> [--name <name>] [--status <status>] [--daily-budget <cents>] [--lifetime-budget <cents>] [--bid-amount <cents>] [--targeting <json>] [--dry-run] [--force]
+meta-ads adsets create [--account-id <id>] --campaign-id <id> --name <name> --billing-event <event> --optimization-goal <goal> [--targeting <json>] [--dry-run]
+meta-ads adsets update --adset-id <id> [--name <name>] [--status <status>] [--force]
 ```
 
 ### ads
-```bash
-meta-ads ads list --account-id <id> [--adset-id <id>] [--campaign-id <id>] [--status <status>] [--limit <n>] [--after <cursor>]
-meta-ads ads get --ad-id <id>
-meta-ads ads update --ad-id <id> [--name <name>] [--status <status>] [--dry-run] [--force]
-```
 
-Ad list/get responses include flattened creative fields: `creative_id`, `creative_title`, `creative_body`, `creative_image_url`, `creative_thumbnail_url`.
+```bash
+meta-ads ads list [--account-id <id>] [--adset-id <id>] [--status <status>]
+meta-ads ads get --ad-id <id>
+meta-ads ads update --ad-id <id> [--name <name>] [--status <status>] [--force]
+```
 
 ### insights
+
 ```bash
-meta-ads insights get --account-id <id> [--date-preset <preset>] [--since <date> --until <date>] [--level <level>] [--fields <fields>] [--time-increment <days>] [--limit <n>]
-meta-ads insights get --campaign-id <id> [--date-preset last_30d]
-meta-ads insights get --adset-id <id> [--since 2024-01-01 --until 2024-01-31]
-meta-ads insights get --ad-id <id> [--date-preset yesterday]
+meta-ads insights get --account-id <id> [--date-preset last_30d] [--level campaign]
+meta-ads insights get --campaign-id <id> [--since 2024-01-01 --until 2024-01-31]
+meta-ads insights get --ad-id <id> [--time-increment 1]
 ```
 
-At least one of `--account-id`, `--campaign-id`, `--adset-id`, `--ad-id` is required.
+At least one of `--account-id`, `--campaign-id`, `--adset-id`, `--ad-id` is required. When a default account is configured, `--account-id` can be omitted.
 
-**Date presets:** `today`, `yesterday`, `this_month`, `last_month`, `last_7d`, `last_14d`, `last_28d`, `last_30d`, `last_90d`, `this_quarter`, `last_quarter`, `last_year`
-
-**Levels:** `account`, `campaign`, `adset`, `ad`
-
-**`--time-increment <n>`:** Set to `1` for daily breakdown. Adds a `date_start`/`date_stop` row per day.
+Date presets: `today`, `yesterday`, `last_7d`, `last_14d`, `last_28d`, `last_30d`, `last_90d`, `this_month`, `last_month`, `this_quarter`, `last_quarter`, `last_year`
 
 ### audiences
+
 ```bash
-meta-ads audiences list --account-id <id> [--limit <n>] [--after <cursor>]
+meta-ads audiences list [--account-id <id>] [--limit <n>]
 meta-ads audiences get --audience-id <id>
+```
+
+### update
+
+```bash
+meta-ads update            # update to latest version
+meta-ads update --check    # check without installing
+```
+
+### uninstall
+
+```bash
+meta-ads uninstall                  # prompts for confirmation
+meta-ads uninstall --force          # skip confirmation
+meta-ads uninstall --keep-config    # keep ~/.config/meta-ads-cli/
 ```
 
 ## Output Formats
 
-All data commands support `--output` / `-o` with three formats:
+All data commands support `--output` / `-o`:
 
 ```bash
-# Table (default) - human-readable
-meta-ads campaigns list --account-id act_123
-
-# JSON - machine-readable; list commands include pagination metadata
-meta-ads campaigns list --account-id act_123 -o json
-# → {"data": [...], "has_more": false}
-
-# CSV - for spreadsheets and pipelines
-meta-ads campaigns list --account-id act_123 -o csv
+meta-ads campaigns list -o table   # default, human-readable
+meta-ads campaigns list -o json    # machine-readable with pagination
+meta-ads campaigns list -o csv     # for spreadsheets and pipelines
 ```
 
-Additional flags:
-- `--verbose` / `-v` - Log HTTP requests and responses to stderr
-- `--access-token <token>` - Override the stored/env token for a single invocation
+JSON list responses: `{"data": [...], "has_more": false}`
+JSON single-item responses: `{"id": "...", "name": "..."}`
 
-Color is automatically disabled when `NO_COLOR` is set, `TERM=dumb`, or stdout is not a TTY.
+Additional flags: `--verbose` / `-v` for HTTP logging, `--access-token` for per-command override.
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `1` | Runtime error (API failure, network error) |
-| `2` | Usage error (missing required flags, cancelled confirmation, invalid input) |
+| `1` | Runtime error (API failure, network) |
+| `2` | Usage error (missing flags, cancelled confirmation) |
 
 ## Configuration
 
-Config file location: `~/.config/meta-ads-cli/config.json` (or `$XDG_CONFIG_HOME/meta-ads-cli/config.json`)
-
-Written by `auth login`, permissions set to `0600` (owner-only).
+Config location: `~/.config/meta-ads-cli/config.json` (respects `$XDG_CONFIG_HOME`)
 
 ```json
 {
   "auth": {
     "access_token": "...",
     "app_id": "..."
+  },
+  "defaults": {
+    "account_id": "act_123456"
   }
 }
 ```
+
+Set your default account via `meta-ads setup` or `meta-ads setup --skip-auth --account-id <id>`.
 
 ## Development
 
@@ -211,4 +249,4 @@ pnpm lint
 
 ## License
 
-MIT
+[MIT](LICENSE)

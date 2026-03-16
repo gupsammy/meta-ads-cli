@@ -1,5 +1,5 @@
 {
-  "name": "meta-ads-cli",
+  "name": "meta-ads",
   "version": "0.1.0",
   "description": "Command-line interface for the Meta (Facebook) Marketing API",
   "type": "module",
@@ -31,7 +31,7 @@
     "meta-ads",
     "marketing-api"
   ],
-  "author": "FunnelEnvy",
+  "author": "Samarth Gupta",
   "license": "MIT",
   "dependencies": {
     "chalk": "^5.3.0",

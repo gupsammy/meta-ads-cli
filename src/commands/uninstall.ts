@@ -5,7 +5,7 @@ import { ConfigManager } from '../lib/config.js';
 import { printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
 const config = new ConfigManager('meta-ads');
-const PACKAGE_NAME = 'meta-ads-cli';
+const PACKAGE_NAME = 'meta-ads';
 
 export function registerUninstallCommand(program: Command): void {
   program

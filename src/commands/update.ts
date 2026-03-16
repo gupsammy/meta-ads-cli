@@ -2,7 +2,7 @@ import { Command, Option } from 'commander';
 import { spawn } from 'node:child_process';
 import { printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
-const PACKAGE_NAME = 'meta-ads-cli';
+const PACKAGE_NAME = 'meta-ads';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 
 function normalizeVersion(v: string): string {

@@ -147,7 +147,7 @@ ensure_npm() {
 
 install_cli() {
   info "Installing meta-ads-cli via npm..."
-  npm install -g meta-ads-cli
+  npm install -g meta-ads
   ok "meta-ads-cli installed."
 }
 
