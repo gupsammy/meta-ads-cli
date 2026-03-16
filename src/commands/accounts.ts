@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, requireAccountId } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
@@ -83,14 +83,14 @@ export function registerAccountsCommands(program: Command): void {
   accounts
     .command('get')
     .description('Get details for a specific ad account')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--access-token <token>', 'Access token')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
-    .action(async (opts: { accountId: string; accessToken?: string; output: OutputFormat; verbose?: boolean }) => {
+    .action(async (opts: { accountId?: string; accessToken?: string; output: OutputFormat; verbose?: boolean }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
         const params: Record<string, string> = { fields: ACCOUNT_FIELDS };
 
         if (opts.verbose) console.error(`GET /${accountId}?fields=${ACCOUNT_FIELDS}`);

@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, resolveAccountId } from '../auth.js';
 import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
 import { printListOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
@@ -67,12 +67,13 @@ Examples:
           basePath = `/${opts.adsetId}/insights`;
         } else if (opts.campaignId) {
           basePath = `/${opts.campaignId}/insights`;
-        } else if (opts.accountId) {
-          const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
-          basePath = `/${accountId}/insights`;
         } else {
-          printError({ code: 'USAGE', message: 'Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id' }, opts.output);
-          process.exit(EXIT_USAGE);
+          const accountId = resolveAccountId(opts.accountId);
+          if (!accountId) {
+            printError({ code: 'USAGE', message: 'Specify at least one of: --account-id, --campaign-id, --adset-id, --ad-id' }, opts.output);
+            process.exit(EXIT_USAGE);
+          }
+          basePath = `/${accountId}/insights`;
         }
 
         if ((opts.since && !opts.until) || (!opts.since && opts.until)) {

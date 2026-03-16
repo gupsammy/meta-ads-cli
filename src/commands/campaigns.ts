@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, requireAccountId } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
@@ -27,7 +27,7 @@ export function registerCampaignsCommands(program: Command): void {
   campaigns
     .command('list')
     .description('List campaigns for an ad account')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--status <status>', 'Filter by status (ACTIVE, PAUSED, DELETED, ARCHIVED)')
     .option('--limit <n>', 'Maximum number of campaigns to return')
     .option('--after <cursor>', 'Pagination cursor')
@@ -41,7 +41,7 @@ Examples:
   $ meta-ads campaigns list --account-id act_123456 --limit 10 --after <cursor>
 `)
     .action(async (opts: {
-      accountId: string;
+      accountId?: string;
       status?: string;
       limit?: string;
       after?: string;
@@ -51,7 +51,7 @@ Examples:
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
         const params: Record<string, string> = { fields: CAMPAIGN_FIELDS };
         if (opts.after) params['after'] = opts.after;
         if (opts.status) {
@@ -146,7 +146,7 @@ Examples:
   campaigns
     .command('create')
     .description('Create a new campaign')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .requiredOption('--name <name>', 'Campaign name')
     .requiredOption('--objective <objective>', 'Campaign objective (OUTCOME_AWARENESS, OUTCOME_TRAFFIC, OUTCOME_ENGAGEMENT, OUTCOME_LEADS, OUTCOME_APP_PROMOTION, OUTCOME_SALES)')
     .option('--status <status>', 'Campaign status (ACTIVE, PAUSED)', 'PAUSED')
@@ -158,7 +158,7 @@ Examples:
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
-      accountId: string;
+      accountId?: string;
       name: string;
       objective: string;
       status?: string;
@@ -172,7 +172,7 @@ Examples:
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
 
         const body: Record<string, unknown> = {
           name: opts.name,

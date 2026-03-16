@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { ConfigManager } from './lib/config.js';
+import { EXIT_USAGE } from './lib/output.js';
 
 const config = new ConfigManager('meta-ads');
 
@@ -29,6 +30,26 @@ export function requireAccessToken(flagValue?: string): string {
     process.exit(1);
   }
   return token;
+}
+
+export function resolveAccountId(flagValue?: string): string | undefined {
+  if (flagValue) return flagValue.startsWith('act_') ? flagValue : `act_${flagValue}`;
+  const configVal = config.getDefault('account_id');
+  if (configVal) return configVal.startsWith('act_') ? configVal : `act_${configVal}`;
+  return undefined;
+}
+
+export function requireAccountId(flagValue?: string): string {
+  const accountId = resolveAccountId(flagValue);
+  if (!accountId) {
+    console.error(
+      `No account ID found. Provide one via:\n` +
+        `  1. --account-id flag\n` +
+        `  2. Config default (run: meta-ads setup)`,
+    );
+    process.exit(EXIT_USAGE);
+  }
+  return accountId;
 }
 
 export function getAuthStatus(): { authenticated: boolean; configPath: string; hasToken: boolean; hasAppId: boolean } {

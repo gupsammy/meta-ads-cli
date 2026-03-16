@@ -6,6 +6,9 @@ import { registerAdsetsCommands } from './commands/adsets.js';
 import { registerAdsCommands } from './commands/ads.js';
 import { registerInsightsCommands } from './commands/insights.js';
 import { registerAudiencesCommands } from './commands/audiences.js';
+import { registerSetupCommand } from './commands/setup.js';
+import { registerUpdateCommand } from './commands/update.js';
+import { registerUninstallCommand } from './commands/uninstall.js';
 
 const program = new Command();
 
@@ -28,5 +31,8 @@ registerAdsetsCommands(program);
 registerAdsCommands(program);
 registerInsightsCommands(program);
 registerAudiencesCommands(program);
+registerSetupCommand(program);
+registerUpdateCommand(program);
+registerUninstallCommand(program);
 
 program.parse();

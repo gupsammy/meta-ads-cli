@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, requireAccountId } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
@@ -31,7 +31,7 @@ export function registerAdsetsCommands(program: Command): void {
   adsets
     .command('list')
     .description('List ad sets for an ad account')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--campaign-id <id>', 'Filter by campaign ID')
     .option('--status <status>', 'Filter by effective status (ACTIVE, PAUSED, DELETED, ARCHIVED)')
     .option('--limit <n>', 'Maximum number of ad sets to return')
@@ -40,7 +40,7 @@ export function registerAdsetsCommands(program: Command): void {
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
-      accountId: string;
+      accountId?: string;
       campaignId?: string;
       status?: string;
       limit?: string;
@@ -51,7 +51,7 @@ export function registerAdsetsCommands(program: Command): void {
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
         const params: Record<string, string> = { fields: ADSET_FIELDS };
         if (opts.after) params['after'] = opts.after;
 
@@ -158,7 +158,7 @@ export function registerAdsetsCommands(program: Command): void {
   adsets
     .command('create')
     .description('Create a new ad set')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .requiredOption('--campaign-id <id>', 'Campaign ID')
     .requiredOption('--name <name>', 'Ad set name')
     .requiredOption('--billing-event <event>', 'Billing event (IMPRESSIONS, LINK_CLICKS, APP_INSTALLS, PAGE_LIKES)')
@@ -175,7 +175,7 @@ export function registerAdsetsCommands(program: Command): void {
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
-      accountId: string;
+      accountId?: string;
       campaignId: string;
       name: string;
       billingEvent: string;
@@ -194,7 +194,7 @@ export function registerAdsetsCommands(program: Command): void {
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
 
         const body: Record<string, unknown> = {
           campaign_id: opts.campaignId,

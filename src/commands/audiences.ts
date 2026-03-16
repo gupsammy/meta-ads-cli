@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, requireAccountId } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 
@@ -23,14 +23,14 @@ export function registerAudiencesCommands(program: Command): void {
   audiences
     .command('list')
     .description('List custom audiences for an ad account')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--limit <n>', 'Maximum number of audiences to return')
     .option('--after <cursor>', 'Pagination cursor')
     .option('--access-token <token>', 'Access token')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
-      accountId: string;
+      accountId?: string;
       limit?: string;
       after?: string;
       accessToken?: string;
@@ -39,7 +39,7 @@ export function registerAudiencesCommands(program: Command): void {
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
         const params: Record<string, string> = { fields: AUDIENCE_FIELDS };
         if (opts.after) params['after'] = opts.after;
 

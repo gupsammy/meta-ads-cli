@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, requireAccountId } from '../auth.js';
 import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
 import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
 
@@ -25,7 +25,7 @@ export function registerAdsCommands(program: Command): void {
   ads
     .command('list')
     .description('List ads for an ad account')
-    .requiredOption('--account-id <id>', 'Ad account ID (e.g., act_123456)')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--adset-id <id>', 'Filter by ad set ID')
     .option('--campaign-id <id>', 'Filter by campaign ID')
     .option('--status <status>', 'Filter by effective status (ACTIVE, PAUSED, DELETED, ARCHIVED)')
@@ -35,7 +35,7 @@ export function registerAdsCommands(program: Command): void {
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .option('-v, --verbose', 'Enable verbose output')
     .action(async (opts: {
-      accountId: string;
+      accountId?: string;
       adsetId?: string;
       campaignId?: string;
       status?: string;
@@ -47,7 +47,7 @@ export function registerAdsCommands(program: Command): void {
     }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const accountId = opts.accountId.startsWith('act_') ? opts.accountId : `act_${opts.accountId}`;
+        const accountId = requireAccountId(opts.accountId);
         const params: Record<string, string> = { fields: AD_FIELDS };
         if (opts.after) params['after'] = opts.after;
 
