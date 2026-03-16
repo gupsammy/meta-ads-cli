@@ -28,11 +28,11 @@ portable_date_ago() {
 
 # Warn when results hit the --limit cap (possible silent truncation)
 warn_if_truncated() {
-  local file="$1" label="$2"
+  local file="$1" label="$2" limit="${3:-500}"
   local count
   count=$(jq '.data | length' "$file" 2>/dev/null || echo 0)
-  if [[ "$count" -eq 500 ]]; then
-    echo "    WARNING: $label returned 500 items (limit reached) — results may be truncated" >&2
+  if [[ "$count" -ge "$limit" ]]; then
+    echo "    WARNING: $label returned $count items (limit $limit reached) — results may be truncated" >&2
   fi
 }
 
@@ -103,6 +103,7 @@ pull_day() {
       --account-id "$ACCOUNT_ID" \
       --limit 500 \
       -o json > "$DATA_DIR/creatives-master.json"
+    warn_if_truncated "$DATA_DIR/creatives-master.json" "ad creatives"
   fi
   cp "$DATA_DIR/creatives-master.json" "$day_dir/creatives.json"
 
