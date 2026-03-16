@@ -20,6 +20,22 @@ CLI="${META_ADS_CLI:-meta-ads}"
 DATA_DIR="${META_ADS_DATA_DIR:-/tmp/meta-ads-intel}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Portable date: tries GNU coreutils first, falls back to BSD (macOS)
+portable_date_ago() {
+  local days=$1
+  date -d "$days days ago" '+%Y-%m-%d' 2>/dev/null || date -v-${days}d '+%Y-%m-%d'
+}
+
+# Warn when results hit the --limit cap (possible silent truncation)
+warn_if_truncated() {
+  local file="$1" label="$2" limit="${3:-500}"
+  local count
+  count=$(jq '.data | length' "$file" 2>/dev/null || echo 0)
+  if [[ "$count" -ge "$limit" ]]; then
+    echo "    WARNING: $label returned $count items (limit $limit reached) — results may be truncated" >&2
+  fi
+}
+
 if ! command -v jq &>/dev/null; then
   echo "Error: jq is required but not installed. Install with: brew install jq" >&2
   exit 1
@@ -52,44 +68,48 @@ pull_day() {
   echo "  Pulling $since..."
 
   # Campaign-level insights (daily)
-  $CLI insights get \
+  "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
     --since "$since" --until "$until" \
     --level campaign \
     --time-increment 1 \
     --limit 500 \
     -o json > "$day_dir/campaigns.json"
+  warn_if_truncated "$day_dir/campaigns.json" "campaigns"
 
   # Adset-level insights (daily)
-  $CLI insights get \
+  "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
     --since "$since" --until "$until" \
     --level adset \
     --time-increment 1 \
     --limit 500 \
     -o json > "$day_dir/adsets.json"
+  warn_if_truncated "$day_dir/adsets.json" "adsets"
 
   # Ad-level insights (daily)
-  $CLI insights get \
+  "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
     --since "$since" --until "$until" \
     --level ad \
     --time-increment 1 \
     --limit 500 \
     -o json > "$day_dir/ads.json"
+  warn_if_truncated "$day_dir/ads.json" "ads"
 
   # Ad creatives (not date-scoped — pull once, reuse)
   if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
-    $CLI ads list \
+    "$CLI" ads list \
       --account-id "$ACCOUNT_ID" \
       --limit 500 \
       -o json > "$DATA_DIR/creatives-master.json"
+    warn_if_truncated "$DATA_DIR/creatives-master.json" "ad creatives"
   fi
   cp "$DATA_DIR/creatives-master.json" "$day_dir/creatives.json"
 
   # Account info (small, same for all days)
   if [[ ! -f "$DATA_DIR/account-master.json" ]]; then
-    $CLI accounts get \
+    "$CLI" accounts get \
       --account-id "$ACCOUNT_ID" \
       -o json > "$DATA_DIR/account-master.json"
   fi
@@ -133,8 +153,7 @@ if [[ "$SEED_DAYS" -gt 0 ]]; then
   echo "Seeding $SEED_DAYS days of data for $ACCOUNT_ID..."
 
   for i in $(seq "$SEED_DAYS" -1 1); do
-    # macOS date syntax: -v-Nd for N days ago
-    day_since=$(date -v-${i}d '+%Y-%m-%d')
+    day_since=$(portable_date_ago "$i")
     day_until="$day_since"
     pull_day "$day_since" "$day_until"
   done
@@ -156,26 +175,29 @@ else
   period_dir="$DATA_DIR/_period"
   mkdir -p "$period_dir"
 
-  $CLI insights get \
+  "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
     --date-preset "$DATE_PRESET" \
     --level campaign \
     --limit 500 \
     -o json > "$period_dir/campaigns.json"
+  warn_if_truncated "$period_dir/campaigns.json" "period campaigns"
 
-  $CLI insights get \
+  "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
     --date-preset "$DATE_PRESET" \
     --level adset \
     --limit 500 \
     -o json > "$period_dir/adsets.json"
+  warn_if_truncated "$period_dir/adsets.json" "period adsets"
 
-  $CLI insights get \
+  "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
     --date-preset "$DATE_PRESET" \
     --level ad \
     --limit 500 \
     -o json > "$period_dir/ads.json"
+  warn_if_truncated "$period_dir/ads.json" "period ads"
 
   cp "$DATA_DIR/creatives-master.json" "$period_dir/creatives.json" 2>/dev/null || true
   cp "$DATA_DIR/account-master.json" "$period_dir/account.json" 2>/dev/null || true
@@ -190,26 +212,29 @@ else
     mkdir -p "$recent_dir"
     echo "  Pulling recent window (last_7d) for comparison..."
 
-    $CLI insights get \
+    "$CLI" insights get \
       --account-id "$ACCOUNT_ID" \
       --date-preset last_7d \
       --level campaign \
       --limit 500 \
       -o json > "$recent_dir/campaigns.json"
+    warn_if_truncated "$recent_dir/campaigns.json" "recent campaigns"
 
-    $CLI insights get \
+    "$CLI" insights get \
       --account-id "$ACCOUNT_ID" \
       --date-preset last_7d \
       --level adset \
       --limit 500 \
       -o json > "$recent_dir/adsets.json"
+    warn_if_truncated "$recent_dir/adsets.json" "recent adsets"
 
-    $CLI insights get \
+    "$CLI" insights get \
       --account-id "$ACCOUNT_ID" \
       --date-preset last_7d \
       --level ad \
       --limit 500 \
       -o json > "$recent_dir/ads.json"
+    warn_if_truncated "$recent_dir/ads.json" "recent ads"
 
     cp "$DATA_DIR/creatives-master.json" "$recent_dir/creatives.json" 2>/dev/null || true
     bash "$SCRIPT_DIR/summarize-data.sh" "$recent_dir"
