@@ -63,6 +63,7 @@ jobs:
           echo "Determined bump: $BUMP"
 
       - name: Bump version and tag
+        id: release
         if: steps.bump.outputs.bump != 'none'
         env:
           BUMP: ${{ steps.bump.outputs.bump }}
@@ -93,7 +94,44 @@ jobs:
           git add package.json
           git commit -m "chore: release v$NEW_VERSION"
           git tag "v$NEW_VERSION"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           git push origin master --follow-tags
+
+      # Build, test, publish — runs in the same job because GITHUB_TOKEN
+      # pushes don't trigger other workflows (no cascade to release.yml).
+      - name: Install pnpm
+        if: steps.bump.outputs.bump != 'none'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        if: steps.bump.outputs.bump != 'none'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+
+      - name: Install, build, test
+        if: steps.bump.outputs.bump != 'none'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm run test
+
+      - name: Publish to npm
+        if: steps.bump.outputs.bump != 'none'
+        run: pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.bump != 'none'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.release.outputs.version }}
+          generate_release_notes: true
 
       - name: Skip — no releasable commits
         if: steps.bump.outputs.bump == 'none'
