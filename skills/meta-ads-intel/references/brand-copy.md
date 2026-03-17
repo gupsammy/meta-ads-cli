@@ -50,6 +50,8 @@ When generating multiple variants:
 
 ## Your Brand Context
 
+<!-- ONBOARDING: Replace YOUR_* placeholders below. The skill's first-run onboarding auto-fills these from your website and ad data. -->
+
 Customize this section for your brand:
 
 - Product: YOUR_PRODUCT_DESCRIPTION

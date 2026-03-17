@@ -19,9 +19,36 @@
 - Default account ID — configure once, skip `--account-id` on every command
 - Self-update (`meta-ads update`) and clean uninstall (`meta-ads uninstall`)
 
+## AI-Powered Analytics (meta-ads-intel)
+
+This repo includes an AI agent skill that turns your ad account data into actionable intelligence. Works with any agent that supports the [skills.sh](https://skills.sh) ecosystem (Claude Code, Cursor, Codex, and more).
+
+What it does:
+- Budget optimization — classifies ad sets as scale/maintain/reduce/pause
+- Creative analysis — ranks ads by ROAS, identifies winning messaging patterns and visual hooks
+- Trend detection — period-over-period and week-over-week performance deltas
+- Funnel diagnostics — pinpoints where conversions drop off (TOFU/MOFU/BOFU)
+- Decision brief — top 3 actions, risks, and watch items
+
+Install the skill and ask your agent to "analyze my ads." On first run, it auto-installs the CLI, authenticates, fetches your account info, and personalizes thresholds and brand context.
+
+```bash
+npx skills add gupsammy/meta-ads-cli
+```
+
 ## Installation
 
-### One-line install (Recommended)
+### AI Agent Skill (Recommended)
+
+If you use an AI coding agent (Claude Code, Cursor, Codex, etc.), install the meta-ads-intel skill. It includes the CLI and walks you through authentication, account setup, and brand configuration on first run:
+
+```bash
+npx skills add gupsammy/meta-ads-cli
+```
+
+Once installed, just ask your agent to "analyze my ads" — the skill handles everything.
+
+### One-line install (CLI only)
 
 **macOS / Linux / WSL:**
 
@@ -60,7 +87,7 @@ Note: with npx you must prefix every command with `npx`.
 meta-ads setup
 
 # Or configure non-interactively
-meta-ads auth login --token YOUR_ACCESS_TOKEN
+meta-ads auth login --token YOUR_TOKEN
 meta-ads setup --skip-auth --account-id act_123456
 
 # List your ad accounts

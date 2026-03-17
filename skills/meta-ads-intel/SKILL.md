@@ -1,20 +1,19 @@
 ---
 name: meta-ads-intel
 description: >
-  This skill should be used when the user asks to "analyze my ads",
-  "meta ads report", "campaign performance", "budget optimization",
-  "creative analysis", "ads intelligence", "weekly ads brief",
-  "ad account health", "how are my campaigns doing", or wants performance
-  insights from Meta advertising data. Not for creating/updating campaigns
-  or writing ad copy.
-model: opus
-allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Glob
-  - Grep
-argument-hint: "[date-preset]"
+  Analyze Meta (Facebook) Ads performance with budget optimization, creative
+  analysis, trend detection, funnel diagnostics, and actionable recommendations.
+  Use when user says "analyze my ads", "meta ads report", "campaign performance",
+  "budget optimization", "creative analysis", "ads intelligence", "weekly ads brief",
+  "ad account health", or wants performance insights from Meta advertising data.
+  Not for creating/updating campaigns or writing ad copy.
+license: MIT
+compatibility: >
+  Requires meta-ads CLI (npm i -g meta-ads), jq, and optionally ffmpeg/ffprobe
+  for visual creative analysis. Node.js >= 20.
+metadata:
+  author: gupsammy
+  version: "1.0"
 ---
 
 # Meta Ads Intelligence
@@ -25,19 +24,24 @@ Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: las
 
 ## Setup
 
-Before first use, configure `references/thresholds.md`:
-- Account ID, CLI path, currency
-- Performance targets (CPA, ROAS) for your margins
-- Optionally customize `references/brand-copy.md` with brand context
-
-Authentication: `meta-ads auth login --token <token>` or `META_ADS_ACCESS_TOKEN` env var.
-
 Data storage defaults to `/tmp/meta-ads-intel/` (cleared on reboot). For persistent data across sessions:
 ```bash
 export META_ADS_DATA_DIR=~/.meta-ads-intel-data
 ```
 
 ## Process
+
+### 0. First-Run Pre-Check
+
+Before anything else, check if the skill is configured:
+
+1. Check if `meta-ads` CLI is available: run `which meta-ads || npx meta-ads --version`
+2. Check if `references/thresholds.md` contains the string `YOUR_ACCOUNT_ID`
+3. Check if `references/brand-copy.md` contains the string `YOUR_PRODUCT_DESCRIPTION`
+
+If all three pass (CLI exists, no placeholders found) — skip to Step 1.
+
+If any check fails — read `references/onboarding.md` and follow that flow. The onboarding will install the CLI, authenticate, fetch account data, ask the user for thresholds, and auto-fill both config files. Once onboarding completes, continue to Step 1.
 
 ### 1. Load Configuration
 

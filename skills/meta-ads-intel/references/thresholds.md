@@ -1,3 +1,5 @@
+<!-- ONBOARDING: Replace YOUR_* placeholders. The skill detects YOUR_ACCOUNT_ID on first run to trigger onboarding. -->
+
 # Performance Targets & Configuration
 
 ## Account
