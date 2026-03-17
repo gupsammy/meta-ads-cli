@@ -1,3 +1,5 @@
+<!-- ONBOARDING: Replace placeholders below (YOUR_*). Step 0 detects these on first run to trigger setup. -->
+
 # Performance Targets & Configuration
 
 ## Account
