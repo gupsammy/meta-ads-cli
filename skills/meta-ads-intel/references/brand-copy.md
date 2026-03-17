@@ -50,16 +50,14 @@ When generating multiple variants:
 
 ## Your Brand Context
 
-<!-- ONBOARDING: Replace YOUR_* placeholders below. The skill's first-run onboarding auto-fills these from your website and ad data. -->
+<!-- ONBOARDING: First-run onboarding fills these from website scrape + ad data. No TBD or placeholder values should remain after onboarding. -->
 
-Customize this section for your brand:
-
-- Product: YOUR_PRODUCT_DESCRIPTION
-- Price point: YOUR_PRICE_RANGE
-- Audience: YOUR_TARGET_AUDIENCE
-- Proven hook angles: (fill in from your top-performing creatives)
-- Winning format: (fill in from creative analysis)
-- Weak format: (fill in from creative analysis)
+- Product: [e.g., "Premium linen clothing for women, Rs 2,000-8,000 range"]
+- Price point: [e.g., "Rs 2,000-8,000 per piece, AOV Rs 3,500"]
+- Audience: [e.g., "Women 25-45, urban India, fashion-forward, Instagram-active"]
+- Proven hook angles: [e.g., "Sensory/texture ('When Heat Rises'), influencer social proof"]
+- Winning format: [e.g., "Video (65% of top performers), lifestyle imagery"]
+- Weak format: [e.g., "Static product shots with hashtag-heavy copy"]
 
 ## Forbidden Words
 

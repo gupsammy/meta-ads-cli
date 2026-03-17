@@ -1,12 +1,10 @@
 ---
 name: meta-ads-intel
 description: >
-  Analyze Meta (Facebook) Ads performance with budget optimization, creative
-  analysis, trend detection, funnel diagnostics, and actionable recommendations.
-  Use when user says "analyze my ads", "meta ads report", "campaign performance",
-  "budget optimization", "creative analysis", "ads intelligence", "weekly ads brief",
-  "ad account health", or wants performance insights from Meta advertising data.
-  Not for creating/updating campaigns or writing ad copy.
+  This skill should be used when the user says "analyze my ads", "meta ads report",
+  "campaign performance", "budget optimization", "creative analysis", "ads intelligence",
+  "weekly ads brief", "ad account health", or wants performance insights from Meta
+  advertising data. Not for creating/updating campaigns or writing ad copy.
 license: MIT
 compatibility: >
   Requires meta-ads CLI (npm i -g meta-ads), jq, and optionally ffmpeg/ffprobe
@@ -24,7 +22,7 @@ Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: las
 
 ## Data Architecture
 
-Scripts handle all data pulling, summarization, and computation. Agent reads 6 pre-computed analysis files — never raw data.
+Scripts handle all data pulling, summarization, and computation. Read only the 6 pre-computed analysis files — never raw data.
 
 ```
 ~/.meta-ads-intel/
@@ -45,16 +43,18 @@ Scripts handle all data pulling, summarization, and computation. Agent reads 6 p
 
 ## Process
 
-### 0. Pre-Check
+### 0. Mode Gate
 
-Check if `~/.meta-ads-intel/config.json` exists and contains a valid `account_id`:
+Check config:
 ```bash
 jq -e '.account_id' ~/.meta-ads-intel/config.json 2>/dev/null
 ```
 
-If config exists and is valid — skip to Step 1.
+**ONBOARDING MODE** (config missing or invalid):
+Read `references/onboarding.md` and follow that flow completely. Onboarding is a dedicated session — it installs the CLI, collects brand context, runs a creative scan, sets targets, and writes config.json. When onboarding says "Setup complete" — STOP. Do NOT continue to Step 1. The user runs /meta-ads-intel again for their first analysis.
 
-If missing — read `references/onboarding.md` and follow that flow. Onboarding installs the CLI via `meta-ads setup`, asks for targets, writes config.json. Once complete, continue to Step 1.
+**ANALYSIS MODE** (config exists and valid):
+Proceed to Step 1.
 
 ### 1. Load Configuration
 
