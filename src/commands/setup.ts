@@ -1,4 +1,5 @@
 import { Command, Option } from 'commander';
+import { spawn } from 'node:child_process';
 import { resolveAccessToken, saveToken, exchangeForLongLivedToken } from '../auth.js';
 import { ConfigManager } from '../lib/config.js';
 import { graphRequestWithRetry, paginateAll, HttpError } from '../lib/http.js';
@@ -33,6 +34,7 @@ export function registerSetupCommand(program: Command): void {
     .option('--non-interactive', 'Non-interactive mode (requires --token)')
     .option('--token <token>', 'Access token (for non-interactive mode)')
     .option('--account-id <id>', 'Default account ID (for non-interactive mode)')
+    .option('--install-skill', 'Install the meta-ads-intel AI analysis skill')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('table'))
     .action(async (opts: {
       skipAuth?: boolean;
@@ -40,6 +42,7 @@ export function registerSetupCommand(program: Command): void {
       nonInteractive?: boolean;
       token?: string;
       accountId?: string;
+      installSkill?: boolean;
       output: OutputFormat;
     }) => {
       try {
@@ -64,6 +67,7 @@ async function runNonInteractive(opts: {
   skipAccount?: boolean;
   token?: string;
   accountId?: string;
+  installSkill?: boolean;
   output: OutputFormat;
 }): Promise<void> {
   if (!opts.skipAuth) {
@@ -91,12 +95,17 @@ async function runNonInteractive(opts: {
     await runHealthCheck(token, opts.output);
   }
 
+  if (opts.installSkill) {
+    await installSkill(true);
+  }
+
   printOutput({ status: 'configured', message: 'Setup complete.' }, opts.output);
 }
 
 async function runInteractive(opts: {
   skipAuth?: boolean;
   skipAccount?: boolean;
+  installSkill?: boolean;
   output: OutputFormat;
 }): Promise<void> {
   console.error('\n  meta-ads-cli setup\n');
@@ -134,10 +143,13 @@ async function runInteractive(opts: {
     }
   }
 
-  // Step 5: Shell completions (stub)
+  // Step 5: AI skill installation
+  await installSkill(opts.installSkill);
+
+  // Step 6: Shell completions (stub)
   console.error('\n  Shell completions: coming soon.\n');
 
-  // Step 6: Quick-start examples
+  // Step 7: Quick-start examples
   printQuickStart();
 }
 
@@ -295,6 +307,47 @@ async function runHealthCheck(token: string, format: OutputFormat): Promise<void
       printError({ code: error.code, message: `Health check failed: ${error.message}` }, format);
     }
   }
+}
+
+async function installSkill(force?: boolean): Promise<boolean> {
+  if (!process.stdin.isTTY && !force) {
+    return false;
+  }
+
+  console.error('\n  AI-powered ad analysis\n');
+  console.error('  The meta-ads-intel skill lets AI coding agents (Claude Code, Cursor,');
+  console.error('  Codex, etc.) analyze your ad performance automatically — budget');
+  console.error('  optimization, creative analysis, trends, and recommendations.\n');
+
+  if (!force) {
+    const proceed = await confirmAction('  Install AI ad analysis skill?');
+    if (!proceed) {
+      console.error('  Skipped skill installation.\n');
+      return false;
+    }
+  }
+
+  console.error('  Installing skill...\n');
+  const result = await runNpxSkills(['-y', 'skills', 'add', 'gupsammy/meta-ads-cli']);
+
+  if (result.success) {
+    console.error('  AI analysis skill installed.\n');
+    return true;
+  }
+
+  console.error('  Skill installation failed. You can install it manually:');
+  console.error('    npx skills add gupsammy/meta-ads-cli\n');
+  return false;
+}
+
+function runNpxSkills(args: string[]): Promise<{ success: boolean }> {
+  return new Promise((resolve) => {
+    // shell: true needed on Windows where npx is a .cmd file
+    // Route child stdout to stderr so npx output doesn't pollute --output json
+    const child = spawn('npx', args, { shell: true, stdio: ['inherit', process.stderr, 'inherit'] });
+    child.on('close', (code) => resolve({ success: code === 0 }));
+    child.on('error', () => resolve({ success: false }));
+  });
 }
 
 function printQuickStart(): void {
