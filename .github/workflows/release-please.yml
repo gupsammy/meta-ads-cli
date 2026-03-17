@@ -1,4 +1,4 @@
-name: Release Please
+name: Auto Release
 
 on:
   push:
@@ -6,16 +6,95 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  release-please:
+  auto-release:
     runs-on: ubuntu-latest
+    # Skip version-bump commits to avoid infinite loop.
+    # head_commit.message is safe in `if:` expressions (not shell-interpolated).
+    if: "!startsWith(github.event.head_commit.message, 'chore: release')"
     steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
+      - uses: actions/checkout@v4
         with:
-          release-type: node
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # If a release was created, the existing release.yml workflow
-      # will trigger on the v* tag and handle npm publish + GitHub Release.
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -z "$TAG" ]; then
+            echo "range=HEAD" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=$TAG..HEAD" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine version bump from conventional commits
+        id: bump
+        env:
+          COMMIT_RANGE: ${{ steps.latest_tag.outputs.range }}
+        run: |
+          if [ "$COMMIT_RANGE" = "HEAD" ]; then
+            COMMITS=$(git log --oneline --format="%s")
+          else
+            COMMITS=$(git log "$COMMIT_RANGE" --oneline --format="%s")
+          fi
+
+          BUMP="none"
+          while IFS= read -r msg; do
+            if echo "$msg" | grep -qiE "^feat(\(|:|!)"; then
+              BUMP="minor"
+            fi
+            if echo "$msg" | grep -qiE "^fix(\(|:|!)"; then
+              if [ "$BUMP" = "none" ]; then
+                BUMP="patch"
+              fi
+            fi
+            if echo "$msg" | grep -qiE "!:"; then
+              BUMP="major"
+            fi
+            if echo "$msg" | grep -qiE "^BREAKING CHANGE"; then
+              BUMP="major"
+            fi
+          done <<< "$COMMITS"
+
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "Determined bump: $BUMP"
+
+      - name: Bump version and tag
+        if: steps.bump.outputs.bump != 'none'
+        env:
+          BUMP: ${{ steps.bump.outputs.bump }}
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Bumping $CURRENT -> $NEW_VERSION ($BUMP)"
+
+          # Update package.json version
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # Commit and tag
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: release v$NEW_VERSION"
+          git tag "v$NEW_VERSION"
+          git push origin master --follow-tags
+
+      - name: Skip — no releasable commits
+        if: steps.bump.outputs.bump == 'none'
+        run: echo "No feat/fix commits since last tag. Skipping release."
