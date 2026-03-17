@@ -1,4 +1,4 @@
-<!-- ONBOARDING: Replace YOUR_* placeholders. The skill detects YOUR_ACCOUNT_ID on first run to trigger onboarding. -->
+<!-- ONBOARDING: Replace placeholders below (YOUR_*). Step 0 detects these on first run to trigger setup. -->
 
 # Performance Targets & Configuration
 

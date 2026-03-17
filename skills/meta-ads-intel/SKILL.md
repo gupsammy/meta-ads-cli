@@ -35,11 +35,11 @@ export META_ADS_DATA_DIR=~/.meta-ads-intel-data
 
 Before anything else, check if the skill is configured:
 
-1. Check if `meta-ads` CLI is available: run `which meta-ads || npx meta-ads --version`
-2. Check if `references/thresholds.md` contains the string `YOUR_ACCOUNT_ID`
-3. Check if `references/brand-copy.md` contains the string `YOUR_PRODUCT_DESCRIPTION`
+1. CLI available: `which meta-ads || npx meta-ads --version` succeeds
+2. `references/thresholds.md` does NOT contain `YOUR_ACCOUNT_ID`
+3. `references/brand-copy.md` does NOT contain `YOUR_PRODUCT_DESCRIPTION`
 
-If all three pass (CLI exists, no placeholders found) — skip to Step 1.
+If all three conditions are met — skip to Step 1.
 
 If any check fails — read `references/onboarding.md` and follow that flow. The onboarding will install the CLI, authenticate, fetch account data, ask the user for thresholds, and auto-fill both config files. Once onboarding completes, continue to Step 1.
 

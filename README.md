@@ -40,7 +40,7 @@ npx skills add gupsammy/meta-ads-cli
 
 ### AI Agent Skill (Recommended)
 
-If you use an AI coding agent (Claude Code, Cursor, Codex, etc.), install the meta-ads-intel skill. It includes the CLI and walks you through authentication, account setup, and brand configuration on first run:
+If you use an AI coding agent (Claude Code, Cursor, Codex, etc.), install the meta-ads-intel skill. On first run, it installs the CLI, walks you through authentication, account setup, and brand configuration:
 
 ```bash
 npx skills add gupsammy/meta-ads-cli

@@ -42,7 +42,12 @@ If not authenticated:
    - Under Permissions, add: `ads_read`, `ads_management`
    - Copy the generated token
 4. Ask the user to paste their token.
-5. Run authentication:
+5. Authenticate using the environment variable approach (preferred — avoids exposing the token in shell history):
+```bash
+export META_ADS_ACCESS_TOKEN=<pasted_token>
+meta-ads auth status -o json
+```
+Alternatively, save the token persistently (note: this writes the token to shell history):
 ```bash
 meta-ads auth login --token <pasted_token>
 ```
@@ -51,8 +56,6 @@ meta-ads auth login --token <pasted_token>
 meta-ads auth status -o json
 ```
 7. If the token is short-lived (< 24h expiry), warn the user and suggest exchanging it for a long-lived token via their app settings, or note they will need to re-authenticate periodically.
-
-Alternative: the user can set `META_ADS_ACCESS_TOKEN` as an environment variable instead. Mention this option.
 
 ## Phase 3: Auto-Fetch Account Info
 
@@ -83,12 +86,19 @@ If the user provides a URL:
 - Fetch the page and extract: product descriptions, price range, target audience signals, brand voice/tone.
 - Use this to populate the "Your Brand Context" section of `brand-copy.md`.
 
-Regardless of website, fetch top-performing creative data from the account:
+Regardless of website, fetch ad performance and creative content separately (the insights endpoint returns metrics but not creative fields):
+
+First, get ad-level performance metrics:
 ```bash
 meta-ads insights get --account-id <account_id> --date-preset last_30d --level ad -o json
 ```
 
-From the insights data, identify the top 3 ads by ROAS (or by lowest CPA if ROAS is unavailable). Extract their `creative_body` and `creative_title` to identify proven hook angles and winning formats.
+Then, fetch creative content (body, title, image URL) for ads in the account:
+```bash
+meta-ads ads list --account-id <account_id> -o json
+```
+
+Join the two datasets by `ad_id`. Identify the top 3 ads by ROAS (or by lowest CPA if ROAS is unavailable) and extract their `creative_body` and `creative_title` to identify proven hook angles and winning formats.
 
 Also identify the bottom 3 performers to note weak formats.
 
