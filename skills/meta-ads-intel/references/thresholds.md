@@ -1,43 +1,30 @@
-<!-- ONBOARDING: Replace placeholders below (YOUR_*). Step 0 detects these on first run to trigger setup. -->
+# Budget Classification Rules & Interpretation Guide
 
-# Performance Targets & Configuration
-
-## Account
-
-- Account ID: YOUR_ACCOUNT_ID (e.g., act_123456789)
-- Account Name: YOUR_ACCOUNT_NAME
-- Currency: YOUR_CURRENCY (e.g., USD, EUR, INR, GBP)
-- CLI Path: meta-ads
-
-Override via environment variables: META_ADS_ACCOUNT_ID, META_ADS_CLI, META_ADS_DATA_DIR.
-
-## Performance Targets
-
-Set based on your account's margins and business goals:
-
-- Target CPA: 0 (cost per purchase — set to your breakeven or target acquisition cost)
-- Target ROAS: 0 (return on ad spend — e.g., 3.0 means $1 spent returns $3 revenue)
-- Max Frequency: 5.0 (above this = audience saturation)
-- Min Spend Threshold: 0 (minimum spend to include entity in recommendations — filters noise)
-
-## Campaign Objective Rules
-
-- OUTCOME_SALES: evaluate by CPA and ROAS against targets
-- LINK_CLICKS: evaluate by CPC (set target) and CTR (target > 2.0%)
-- OUTCOME_TRAFFIC: evaluate by landing_page_view cost and CTR
-- OUTCOME_AWARENESS: evaluate by CPM and reach efficiency
+Machine-readable config (account ID, targets, analysis params) lives in `~/.meta-ads-intel/config.json`. This file contains the interpretation rules the agent uses when reviewing budget-actions.json classifications.
 
 ## Budget Classification Rules
 
-- Scale: ROAS > target * 1.2 AND CPA < target * 0.8
-- Maintain: within 20% of targets
-- Reduce: missing targets by >20%
-- Pause: zero purchases AND spend > min threshold
-- Refresh: frequency > max frequency ceiling
+Applied by `prepare-analysis.sh` to each adset with spend above min_spend threshold:
 
-## Notes
+- Scale: ROAS > target × 1.2 AND CPA < target × 0.8 — strong performer, increase budget
+- Maintain: within 20% of targets — performing acceptably, hold steady
+- Reduce: missing targets by >20% on ROAS or CPA — underperforming, decrease budget
+- Pause: zero purchases AND spend > min threshold — no conversions despite spend
+- Refresh: frequency > max frequency ceiling — audience saturation, needs new creative or audience
 
-- TOFU campaigns naturally have higher CPA — weight recommendations accordingly
-- BOFU retargeting should have lower CPA and higher ROAS than TOFU
-- New campaigns (< 7 days) may be in learning phase — flag but don't recommend pausing
-- Budget values from the API are in minor currency units (cents/paisa) — divide by 100 for display
+## Campaign Objective Rules
+
+Classification targets vary by campaign objective:
+
+- OUTCOME_SALES: evaluate by CPA and ROAS against targets (primary use case)
+- LINK_CLICKS: evaluate by CPC and CTR (target CTR > 2.0%)
+- OUTCOME_TRAFFIC: evaluate by landing_page_view cost and CTR
+- OUTCOME_AWARENESS: evaluate by CPM and reach efficiency
+
+## Interpretation Notes
+
+- TOFU campaigns naturally have higher CPA — weight recommendations accordingly. A TOFU campaign classified as "reduce" may still be strategically valuable for pipeline building.
+- BOFU retargeting should have lower CPA and higher ROAS than TOFU. A BOFU campaign classified as "maintain" when it should be "scale" is a missed opportunity.
+- New campaigns (< 7 days) may be in learning phase — flag but don't recommend pausing. Meta's algorithm needs ~50 conversions to exit learning phase.
+- Budget values from the API are in minor currency units (cents/paisa) — divide by 100 for display.
+- The "refresh" classification means the creative or audience is fatigued, not that the campaign strategy is wrong. Recommend new creative variants or audience expansion, not budget cuts.

@@ -3,21 +3,21 @@ set -e
 
 # Extract visual artifacts (frames + metadata) from top/bottom performing ad creatives.
 #
-# Input: creative-targets.json — array of [{ad_id, ad_name, rank, roas, cpa}]
-# Output: Frames and metadata in creatives/{ad_id}/ subdirectories + manifest.json
+# Input: creative-media.json from the latest run directory (auto-detected via latest.json)
+# Output: Frames and metadata in ~/.meta-ads-intel/creatives/{ad_id}/ + manifest.json
 #
 # Configuration (override via environment variables):
-#   META_ADS_DATA_DIR  — Data directory (default: /tmp/meta-ads-intel)
+#   META_ADS_DATA_DIR  — Data directory (default: ~/.meta-ads-intel/data)
 #
 # Dependencies: ffmpeg, ffprobe, curl, jq, python3
 #
 # Usage: analyze-creatives.sh [input-file]
-#        Default input: $META_ADS_DATA_DIR/_period/creative-targets.json
+#        Default input: auto-detected from latest run directory
 
-export DATA_DIR="${META_ADS_DATA_DIR:-/tmp/meta-ads-intel}"
-export CREATIVES_DIR="$DATA_DIR/_period/creatives"
+export DATA_DIR="${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}"
+export CREATIVES_DIR="$HOME/.meta-ads-intel/creatives"
 CREATIVES_MASTER="$DATA_DIR/creatives-master.json"
-CONFIG_FILE="$HOME/.config/meta-ads-cli/config.json"
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/meta-ads-cli/config.json"
 API_VERSION="v21.0"
 MAX_FRAMES=6
 
@@ -39,11 +39,23 @@ else
   exit 1
 fi
 
-# Input file
-export INPUT_FILE="${1:-$DATA_DIR/_period/creative-targets.json}"
+# Input file — auto-detect from latest run dir if not specified
+if [[ -n "$1" ]]; then
+  export INPUT_FILE="$1"
+else
+  # Find latest run directory
+  LATEST_FILE="$DATA_DIR/latest.json"
+  if [[ ! -f "$LATEST_FILE" ]]; then
+    echo "Error: No latest.json found. Run pull-data.sh first." >&2
+    exit 1
+  fi
+  LATEST_RUN=$(jq -r '.latest' "$LATEST_FILE")
+  export INPUT_FILE="$DATA_DIR/$LATEST_RUN/creative-media.json"
+fi
+
 if [[ ! -f "$INPUT_FILE" ]]; then
   echo "Error: Input file not found: $INPUT_FILE" >&2
-  echo "The skill should write creative-targets.json before calling this script." >&2
+  echo "Run pull-data.sh first to generate creative-media.json." >&2
   exit 1
 fi
 
@@ -60,7 +72,7 @@ TOTAL=$(jq length "$INPUT_FILE")
 echo "Extracting creative artifacts for $TOTAL ads..."
 
 for i in $(seq 0 $((TOTAL - 1))); do
-  AD_ID=$(jq -r ".[$i].ad_id" "$INPUT_FILE")
+  AD_ID=$(jq -r ".[$i].ad_id // .[$i].ad_name" "$INPUT_FILE")
   AD_NAME=$(jq -r ".[$i].ad_name" "$INPUT_FILE")
   RANK=$(jq -r ".[$i].rank" "$INPUT_FILE")
 
@@ -206,15 +218,16 @@ echo "Building manifest..."
 python3 << 'PYEOF'
 import json, os, glob
 
-creatives_dir = os.environ.get("CREATIVES_DIR", "/tmp/meta-ads-intel/_period/creatives")
-input_file = os.environ.get("INPUT_FILE", "/tmp/meta-ads-intel/_period/creative-targets.json")
+creatives_dir = os.environ.get("CREATIVES_DIR", os.path.expanduser("~/.meta-ads-intel/creatives"))
+input_file = os.environ.get("INPUT_FILE")
 
 targets = json.load(open(input_file))
 manifest = []
 total_frames = 0
 
 for ad in targets:
-    ad_dir = os.path.join(creatives_dir, str(ad["ad_id"]))
+    ad_id = str(ad.get("ad_id", ad.get("ad_name", "")))
+    ad_dir = os.path.join(creatives_dir, ad_id)
     if not os.path.isdir(ad_dir):
         continue
 
@@ -226,7 +239,7 @@ for ad in targets:
     total_frames += len(frame_names)
 
     manifest.append({
-        "ad_id": ad["ad_id"],
+        "ad_id": ad_id,
         "ad_name": ad.get("ad_name", ""),
         "rank": ad.get("rank", ""),
         "roas": ad.get("roas", 0),
