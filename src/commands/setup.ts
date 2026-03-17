@@ -310,7 +310,7 @@ async function runHealthCheck(token: string, format: OutputFormat): Promise<void
 }
 
 async function installSkill(force?: boolean): Promise<boolean> {
-  if (!process.stdout.isTTY && !force) {
+  if (!process.stdin.isTTY && !force) {
     return false;
   }
 
@@ -342,7 +342,9 @@ async function installSkill(force?: boolean): Promise<boolean> {
 
 function runNpxSkills(args: string[]): Promise<{ success: boolean }> {
   return new Promise((resolve) => {
-    const child = spawn('npx', args, { shell: true, stdio: 'inherit' });
+    // shell: true needed on Windows where npx is a .cmd file
+    // Route child stdout to stderr so npx output doesn't pollute --output json
+    const child = spawn('npx', args, { shell: true, stdio: ['inherit', process.stderr, 'inherit'] });
     child.on('close', (code) => resolve({ success: code === 0 }));
     child.on('error', () => resolve({ success: false }));
   });

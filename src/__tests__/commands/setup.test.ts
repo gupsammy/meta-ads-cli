@@ -141,7 +141,7 @@ describe('setup command', () => {
     setTimeout(() => child.emit('close', 0), 0);
 
     await program.parseAsync(['node', 'meta-ads', 'setup', '--non-interactive', '--token', 'tok', '--account-id', 'act_111', '--install-skill']);
-    expect(mockSpawn).toHaveBeenCalledWith('npx', ['-y', 'skills', 'add', 'gupsammy/meta-ads-cli'], { shell: true, stdio: 'inherit' });
+    expect(mockSpawn).toHaveBeenCalledWith('npx', ['-y', 'skills', 'add', 'gupsammy/meta-ads-cli'], { shell: true, stdio: ['inherit', process.stderr, 'inherit'] });
     expect(stderrSpy).toHaveBeenCalledWith('  AI analysis skill installed.\n');
   });
 
