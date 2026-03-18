@@ -23,8 +23,11 @@ fi
 # Maps campaign id -> objective. Insights use campaign_id, campaigns list uses id.
 OBJ_LOOKUP="$DIR/_objective_lookup.json"
 if [[ -f "$DIR/campaigns-meta.json" ]]; then
-  jq 'INDEX((.data // .)[]; .id) | map_values(.objective // "UNKNOWN")' \
-    "$DIR/campaigns-meta.json" > "$OBJ_LOOKUP" 2>/dev/null || echo '{}' > "$OBJ_LOOKUP"
+  if ! jq 'INDEX((.data // .)[]; .id) | map_values(.objective // "UNKNOWN")' \
+       "$DIR/campaigns-meta.json" > "$OBJ_LOOKUP" 2>/dev/null; then
+    echo "Warning: campaigns-meta.json parse failed — objective filtering disabled" >&2
+    echo '{}' > "$OBJ_LOOKUP"
+  fi
 else
   echo '{}' > "$OBJ_LOOKUP"
 fi

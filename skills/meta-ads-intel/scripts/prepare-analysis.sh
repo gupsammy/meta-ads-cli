@@ -50,6 +50,14 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
     . as $all |
     [.[] | select(.objective == "OUTCOME_SALES")] as $sales |
 
+    # Bind aggregates once — avoids recomputing add over the same arrays
+    ($all | map(.spend) | add // 0) as $as |
+    ($all | map(.purchases) | add // 0) as $ap |
+    ($all | map(.revenue) | add // 0) as $ar |
+    ($sales | map(.spend) | add // 0) as $ss |
+    ($sales | map(.purchases) | add // 0) as $sp |
+    ($sales | map(.revenue) | add // 0) as $sr |
+
     {
       account_name: $name,
       currency: $currency,
@@ -58,31 +66,31 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
       non_sales_campaigns: [$all[] | select(.objective != "OUTCOME_SALES") | {campaign_name, objective, spend}],
 
       # Blended metrics (all campaigns)
-      total_spend: ($all | map(.spend) | add // 0),
-      total_purchases: ($all | map(.purchases) | add // 0),
-      total_revenue: ($all | map(.revenue) | add // 0),
+      total_spend: $as,
+      total_purchases: $ap,
+      total_revenue: $ar,
       total_impressions: ($all | map(.impressions) | add // 0),
       total_reach: ($all | map(.reach) | add // 0),
-      blended_cpa: (if ($all | map(.purchases) | add // 0) > 0 then (($all | map(.spend) | add) / ($all | map(.purchases) | add) | . * 100 | round / 100) else null end),
-      blended_roas: (if ($all | map(.spend) | add // 0) > 0 then (($all | map(.revenue) | add) / ($all | map(.spend) | add) | . * 100 | round / 100) else null end),
+      blended_cpa: (if $ap > 0 then ($as / $ap | . * 100 | round / 100) else null end),
+      blended_roas: (if $as > 0 then ($ar / $as | . * 100 | round / 100) else null end),
 
       # Sales-specific metrics (OUTCOME_SALES only — used for target comparison)
-      sales_spend: ($sales | map(.spend) | add // 0),
-      sales_purchases: ($sales | map(.purchases) | add // 0),
-      sales_revenue: ($sales | map(.revenue) | add // 0),
-      sales_cpa: (if ($sales | map(.purchases) | add // 0) > 0 then (($sales | map(.spend) | add) / ($sales | map(.purchases) | add) | . * 100 | round / 100) else null end),
-      sales_roas: (if ($sales | map(.spend) | add // 0) > 0 then (($sales | map(.revenue) | add) / ($sales | map(.spend) | add) | . * 100 | round / 100) else null end),
-      non_sales_spend: ([$all[] | select(.objective != "OUTCOME_SALES")] | map(.spend) | add // 0),
+      sales_spend: $ss,
+      sales_purchases: $sp,
+      sales_revenue: $sr,
+      sales_cpa: (if $sp > 0 then ($ss / $sp | . * 100 | round / 100) else null end),
+      sales_roas: (if $ss > 0 then ($sr / $ss | . * 100 | round / 100) else null end),
+      non_sales_spend: ($as - $ss),
 
       target_cpa: $target_cpa,
       target_roas: $target_roas,
 
       # Target comparisons use sales-specific metrics
-      cpa_vs_target: (if ($sales | map(.purchases) | add // 0) > 0 and $target_cpa > 0 then
-        (((($sales | map(.spend) | add) / ($sales | map(.purchases) | add)) - $target_cpa) / $target_cpa * 100 | round)
+      cpa_vs_target: (if $sp > 0 and $target_cpa > 0 then
+        ((($ss / $sp) - $target_cpa) / $target_cpa * 100 | round)
       else null end),
-      roas_vs_target: (if ($sales | map(.spend) | add // 0) > 0 and $target_roas > 0 then
-        (((($sales | map(.revenue) | add) / ($sales | map(.spend) | add)) - $target_roas) / $target_roas * 100 | round)
+      roas_vs_target: (if $ss > 0 and $target_roas > 0 then
+        ((($sr / $ss) - $target_roas) / $target_roas * 100 | round)
       else null end)
     }' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/account-health.json"
   echo "  account-health.json"
