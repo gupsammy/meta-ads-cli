@@ -135,6 +135,18 @@ if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
 fi
 cp "$DATA_DIR/creatives-master.json" "$RAW_DIR/creatives.json"
 
+# Campaign metadata (cached at DATA_DIR level, same pattern as creatives).
+# Provides objective field that insights API does not return.
+# To refresh after creating/deleting campaigns: rm ~/.meta-ads-intel/data/campaigns-master.json
+if [[ ! -f "$DATA_DIR/campaigns-master.json" ]]; then
+  "$CLI" campaigns list \
+    --account-id "$ACCOUNT_ID" \
+    --limit 500 \
+    -o json > "$DATA_DIR/campaigns-master.json"
+  warn_if_truncated "$DATA_DIR/campaigns-master.json" "campaign metadata"
+fi
+cp "$DATA_DIR/campaigns-master.json" "$RAW_DIR/campaigns-meta.json"
+
 if [[ ! -f "$DATA_DIR/account-master.json" ]]; then
   "$CLI" accounts get \
     --account-id "$ACCOUNT_ID" \
@@ -160,6 +172,9 @@ if [[ "$DATE_PRESET" != "last_7d" ]]; then
   RECENT_DIR="$RUN_DIR/_recent"
   mkdir -p "$RECENT_RAW" "$RECENT_DIR"
   echo "  Pulling recent window (last_7d) for comparison..."
+
+  # Copy campaign metadata so summarization can join objectives
+  cp "$DATA_DIR/campaigns-master.json" "$RECENT_RAW/campaigns-meta.json" 2>/dev/null || true
 
   # Only pull campaign-level for recent window — trends.json only needs campaign data.
   # Skipping adset/ad level saves 2 API calls per run.

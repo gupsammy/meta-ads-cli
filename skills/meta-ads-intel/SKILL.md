@@ -83,16 +83,15 @@ Identify the run directory from script output (printed as "Run directory: ...").
 
 Read `account-health.json` from the run directory.
 
-This contains: total spend, purchases, revenue, blended CPA, blended ROAS, comparisons vs targets (delta %). Present as the headline scorecard. Flag any metric missing target by >20%.
+This contains both blended (all campaigns) and sales-specific (OUTCOME_SALES only) metrics. Use `sales_cpa` and `sales_roas` for target comparisons — blended metrics include non-conversion campaign spend that dilutes CPA/ROAS. The `non_sales_campaigns` array shows what was excluded (campaign name, objective, spend). Mention non-sales spend in the scorecard for context but don't evaluate it against CPA/ROAS targets. Flag any sales metric missing target by >20%.
 
 ### 4. Budget Actions
 
 Read `budget-actions.json` from the run directory.
 
-Pre-classified by `prepare-analysis.sh` into scale/reduce/pause/refresh/maintain buckets with reason strings. The agent's job is to add judgment:
+Pre-classified by `prepare-analysis.sh` into scale/reduce/pause/refresh/maintain buckets with reason strings. Only OUTCOME_SALES adsets are included — non-sales adsets are excluded (see `summary.excluded_non_sales` count). The agent's job is to add judgment:
 
 - Learning phase? New campaigns (< 7 days) classified as "reduce" or "pause" may need protection.
-- Objective context? A TOFU awareness campaign classified as "reduce" on CPA may still be strategically correct.
 - Scale recommendations — suggest specific budget increase amounts (e.g., "increase daily budget by 20%").
 - Pause recommendations — check if the adset is the only one in its campaign before recommending pause.
 
@@ -102,7 +101,7 @@ Use `references/thresholds.md` interpretation rules for nuance.
 
 Read `funnel.json` from the run directory.
 
-Contains: stage counts (impressions → clicks → landing pages → view content → add to cart → checkout → purchase), conversion rates between stages, and identified bottleneck (lowest conversion rate stage).
+Filtered to OUTCOME_SALES campaigns only — non-sales campaigns (traffic, awareness) are excluded to prevent funnel dilution. The `filter` object shows how many campaigns were included vs excluded and how much non-sales spend was omitted. Contains: stage counts (impressions → clicks → landing pages → view content → add to cart → checkout → purchase), conversion rates between stages, and identified bottleneck (lowest conversion rate stage).
 
 Interpret the bottleneck:
 - TOFU (click/landing): targeting or ad relevance issue
@@ -115,7 +114,7 @@ Connect to specific campaign or adset recommendations from Step 4.
 
 Read `trends.json` from the run directory.
 
-If `available: true`: contains per-campaign deltas between the full period and the recent 7-day window. The `flagged` array highlights campaigns where ROAS declined >15% or CPA rose >15%.
+If `available: true`: contains per-campaign deltas (OUTCOME_SALES campaigns only) between the full period and the recent 7-day window. The `flagged` array highlights campaigns where ROAS declined >15% or CPA rose >15%.
 
 Identify concerning patterns: accelerating fatigue (frequency rising + ROAS declining), spend shifting without performance improvement, campaigns that were strong in the period but weakening recently.
 

@@ -45,25 +45,44 @@ echo "Preparing analysis files for $(basename "$RUN_DIR")..."
 if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
   jq --arg name "$ACCOUNT_NAME" --arg currency "$CURRENCY" \
      --argjson target_cpa "$TARGET_CPA" --argjson target_roas "$TARGET_ROAS" '
+
+    # Segment by objective
+    . as $all |
+    [.[] | select(.objective == "OUTCOME_SALES")] as $sales |
+
     {
       account_name: $name,
       currency: $currency,
-      campaign_count: length,
-      total_spend: (map(.spend) | add // 0),
-      total_purchases: (map(.purchases) | add // 0),
-      total_revenue: (map(.revenue) | add // 0),
-      total_impressions: (map(.impressions) | add // 0),
-      total_reach: (map(.reach) | add // 0)
-    } | . + {
-      blended_cpa: (if .total_purchases > 0 then (.total_spend / .total_purchases | . * 100 | round / 100) else null end),
-      blended_roas: (if .total_spend > 0 then (.total_revenue / .total_spend | . * 100 | round / 100) else null end),
+      campaign_count: ($all | length),
+      sales_campaign_count: ($sales | length),
+      non_sales_campaigns: [$all[] | select(.objective != "OUTCOME_SALES") | {campaign_name, objective, spend}],
+
+      # Blended metrics (all campaigns)
+      total_spend: ($all | map(.spend) | add // 0),
+      total_purchases: ($all | map(.purchases) | add // 0),
+      total_revenue: ($all | map(.revenue) | add // 0),
+      total_impressions: ($all | map(.impressions) | add // 0),
+      total_reach: ($all | map(.reach) | add // 0),
+      blended_cpa: (if ($all | map(.purchases) | add // 0) > 0 then (($all | map(.spend) | add) / ($all | map(.purchases) | add) | . * 100 | round / 100) else null end),
+      blended_roas: (if ($all | map(.spend) | add // 0) > 0 then (($all | map(.revenue) | add) / ($all | map(.spend) | add) | . * 100 | round / 100) else null end),
+
+      # Sales-specific metrics (OUTCOME_SALES only — used for target comparison)
+      sales_spend: ($sales | map(.spend) | add // 0),
+      sales_purchases: ($sales | map(.purchases) | add // 0),
+      sales_revenue: ($sales | map(.revenue) | add // 0),
+      sales_cpa: (if ($sales | map(.purchases) | add // 0) > 0 then (($sales | map(.spend) | add) / ($sales | map(.purchases) | add) | . * 100 | round / 100) else null end),
+      sales_roas: (if ($sales | map(.spend) | add // 0) > 0 then (($sales | map(.revenue) | add) / ($sales | map(.spend) | add) | . * 100 | round / 100) else null end),
+      non_sales_spend: ([$all[] | select(.objective != "OUTCOME_SALES")] | map(.spend) | add // 0),
+
       target_cpa: $target_cpa,
       target_roas: $target_roas,
-      cpa_vs_target: (if .total_purchases > 0 and $target_cpa > 0 then
-        (((.total_spend / .total_purchases) - $target_cpa) / $target_cpa * 100 | round)
+
+      # Target comparisons use sales-specific metrics
+      cpa_vs_target: (if ($sales | map(.purchases) | add // 0) > 0 and $target_cpa > 0 then
+        (((($sales | map(.spend) | add) / ($sales | map(.purchases) | add)) - $target_cpa) / $target_cpa * 100 | round)
       else null end),
-      roas_vs_target: (if .total_spend > 0 and $target_roas > 0 then
-        (((.total_revenue / .total_spend) - $target_roas) / $target_roas * 100 | round)
+      roas_vs_target: (if ($sales | map(.spend) | add // 0) > 0 and $target_roas > 0 then
+        (((($sales | map(.revenue) | add) / ($sales | map(.spend) | add)) - $target_roas) / $target_roas * 100 | round)
       else null end)
     }' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/account-health.json"
   echo "  account-health.json"
@@ -74,6 +93,11 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
   jq --argjson target_cpa "$TARGET_CPA" --argjson target_roas "$TARGET_ROAS" \
      --argjson max_freq "$MAX_FREQUENCY" --argjson min_spend "$MIN_SPEND" \
      --argjson top_maintain 3 '
+
+    # Filter to OUTCOME_SALES adsets only — non-sales adsets have different KPIs
+    length as $total_adsets |
+    [.[] | select(.objective == "OUTCOME_SALES")] |
+    ($total_adsets - length) as $excluded_non_sales |
 
     # Classify each adset
     [.[] | select(.spend >= $min_spend)] |
@@ -137,6 +161,7 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
       },
       summary: {
         total_evaluated: length,
+        excluded_non_sales: $excluded_non_sales,
         scale: ([.[] | select(.action == "scale")] | length),
         reduce: ([.[] | select(.action == "reduce")] | length),
         pause: ([.[] | select(.action == "pause")] | length),
@@ -149,7 +174,17 @@ fi
 
 # ─── 3. funnel.json ──────────────────────────────────────────────────────────
 if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
-  jq '{
+  jq '
+    # Filter to OUTCOME_SALES — non-sales campaigns inflate TOFU and dilute conversion rates
+    . as $all |
+    [.[] | select(.objective == "OUTCOME_SALES")] |
+    {
+    filter: {
+      objective: "OUTCOME_SALES",
+      included: length,
+      excluded: (($all | length) - length),
+      excluded_spend: ([$all[] | select(.objective != "OUTCOME_SALES")] | map(.spend) | add // 0)
+    },
     impressions: (map(.impressions) | add // 0),
     link_clicks: (map(.link_clicks) | add // 0),
     landing_page_views: (map(.landing_page_views) | add // 0),
@@ -183,14 +218,17 @@ fi
 if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -f "$RUN_DIR/campaigns-summary.json" ]]; then
   jq --slurpfile recent "$RUN_DIR/_recent/campaigns-summary.json" '
 
-    # Build lookup of recent data by campaign_id
-    ($recent[0] | INDEX(.campaign_id)) as $recent_idx |
+    # Filter to OUTCOME_SALES campaigns only
+    [.[] | select(.objective == "OUTCOME_SALES")] |
+
+    # Build lookup of recent data by campaign_id (also filtered to sales)
+    ([$recent[0][] | select(.objective == "OUTCOME_SALES")] | INDEX(.campaign_id)) as $recent_idx |
 
     # Period date range (from first campaign entry)
     (if length > 0 then .[0].date_start else null end) as $period_start |
     (if length > 0 then .[0].date_stop else null end) as $period_stop |
-    ($recent[0] | if length > 0 then .[0].date_start else null end) as $recent_start |
-    ($recent[0] | if length > 0 then .[0].date_stop else null end) as $recent_stop |
+    ([$recent[0][] | select(.objective == "OUTCOME_SALES")] | if length > 0 then .[0].date_start else null end) as $recent_start |
+    ([$recent[0][] | select(.objective == "OUTCOME_SALES")] | if length > 0 then .[0].date_stop else null end) as $recent_stop |
 
     {
       available: true,
@@ -254,8 +292,8 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
   jq --argjson min_spend "$MIN_SPEND" --argjson top_n "$TOP_N" \
      --argjson bottom_n "$BOTTOM_N" --argjson zero_n "$ZERO_N" '
 
-    # Filter by min spend
-    [.[] | select(.spend >= $min_spend)] |
+    # Filter to OUTCOME_SALES ads with min spend
+    [.[] | select(.objective == "OUTCOME_SALES" and .spend >= $min_spend)] |
 
     # Separate ads with and without purchases
     (map(select(.purchases > 0)) | sort_by(-.roas)) as $with_purchases |
@@ -309,8 +347,8 @@ if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; th
       creative_thumbnail_url: (.creative_thumbnail_url // "")
     })) as $url_lookup |
 
-    # Same filtering logic as creative-analysis.json
-    [.[] | select(.spend >= $min_spend)] |
+    # Same filtering logic as creative-analysis.json (OUTCOME_SALES only)
+    [.[] | select(.objective == "OUTCOME_SALES" and .spend >= $min_spend)] |
     (map(select(.purchases > 0)) | sort_by(-.roas)) as $with_purchases |
     (map(select(.purchases == 0)) | sort_by(-.spend)) as $zero_purchase |
 
