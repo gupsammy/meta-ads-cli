@@ -19,11 +19,25 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
+# Build objective lookup from campaigns-meta.json (campaigns list endpoint).
+# Maps campaign id -> objective. Insights use campaign_id, campaigns list uses id.
+OBJ_LOOKUP="$DIR/_objective_lookup.json"
+if [[ -f "$DIR/campaigns-meta.json" ]]; then
+  if ! jq 'INDEX((.data // .)[]; .id) | map_values(.objective // "UNKNOWN")' \
+       "$DIR/campaigns-meta.json" > "$OBJ_LOOKUP" 2>/dev/null; then
+    echo "Warning: campaigns-meta.json parse failed — objective filtering disabled" >&2
+    echo '{}' > "$OBJ_LOOKUP"
+  fi
+else
+  echo '{}' > "$OBJ_LOOKUP"
+fi
+
 # Summarize campaigns
 if [[ -f "$DIR/campaigns.json" ]]; then
-  jq '[(.data // .)[] | {
+  jq --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] | {
     campaign_id: (.campaign_id // null),
     campaign_name: (.campaign_name // null),
+    objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
     date_start,
     date_stop,
     spend: ((.spend // "0") | tonumber),
@@ -49,11 +63,12 @@ fi
 
 # Summarize adsets
 if [[ -f "$DIR/adsets.json" ]]; then
-  jq '[(.data // .)[] | {
+  jq --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] | {
     adset_id: (.adset_id // null),
     adset_name: (.adset_name // null),
     campaign_id: (.campaign_id // null),
     campaign_name: (.campaign_name // null),
+    objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
     date_start,
     date_stop,
     spend: ((.spend // "0") | tonumber),
@@ -84,7 +99,7 @@ if [[ -f "$DIR/ads.json" ]]; then
       creative_title: .creative_title
     })' "$DIR/creatives.json" > "$DIR/_creative_lookup.json" 2>/dev/null || echo '{}' > "$DIR/_creative_lookup.json"
 
-    jq --slurpfile creatives "$DIR/_creative_lookup.json" '[(.data // .)[] |
+    jq --slurpfile creatives "$DIR/_creative_lookup.json" --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] |
       ((.ad_id // "") | tostring) as $aid |
       {
         ad_id: (.ad_id // null),
@@ -92,6 +107,7 @@ if [[ -f "$DIR/ads.json" ]]; then
         adset_id: (.adset_id // null),
         campaign_id: (.campaign_id // null),
         campaign_name: (.campaign_name // null),
+        objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
         date_start,
         date_stop,
         spend: ((.spend // "0") | tonumber),
@@ -111,12 +127,13 @@ if [[ -f "$DIR/ads.json" ]]; then
 
     rm -f "$DIR/_creative_lookup.json"
   else
-    jq '[(.data // .)[] | {
+    jq --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] | {
       ad_id: (.ad_id // null),
       ad_name: (.ad_name // null),
       adset_id: (.adset_id // null),
       campaign_id: (.campaign_id // null),
       campaign_name: (.campaign_name // null),
+      objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
       date_start,
       date_stop,
       spend: ((.spend // "0") | tonumber),
@@ -134,5 +151,7 @@ if [[ -f "$DIR/ads.json" ]]; then
   fi
   echo "  ads-summary.json: $(wc -l < "$DIR/ads-summary.json" | tr -d ' ') lines"
 fi
+
+rm -f "$DIR/_objective_lookup.json"
 
 echo "  Summarization complete for $(basename "$DIR")"
