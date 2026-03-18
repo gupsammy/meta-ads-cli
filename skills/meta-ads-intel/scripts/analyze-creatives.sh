@@ -15,7 +15,7 @@ set -e
 #        Default input: auto-detected from latest run directory
 
 export DATA_DIR="${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}"
-export CREATIVES_DIR="$HOME/.meta-ads-intel/creatives"
+export CREATIVES_DIR="$(dirname "${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}")/creatives"
 CREATIVES_MASTER="$DATA_DIR/creatives-master.json"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/meta-ads-cli/config.json"
 API_VERSION="v21.0"
@@ -72,7 +72,7 @@ TOTAL=$(jq length "$INPUT_FILE")
 echo "Extracting creative artifacts for $TOTAL ads..."
 
 for i in $(seq 0 $((TOTAL - 1))); do
-  AD_ID=$(jq -r ".[$i].ad_id // .[$i].ad_name" "$INPUT_FILE")
+  AD_ID=$(jq -r ".[$i].ad_id // .[$i].ad_name" "$INPUT_FILE" | tr -cd '[:alnum:]_-' | cut -c1-64)
   AD_NAME=$(jq -r ".[$i].ad_name" "$INPUT_FILE")
   RANK=$(jq -r ".[$i].rank" "$INPUT_FILE")
 
@@ -216,7 +216,7 @@ done
 # Build artifacts manifest
 echo "Building manifest..."
 python3 << 'PYEOF'
-import json, os, glob
+import json, os, glob, re
 
 creatives_dir = os.environ.get("CREATIVES_DIR", os.path.expanduser("~/.meta-ads-intel/creatives"))
 input_file = os.environ.get("INPUT_FILE")
@@ -226,7 +226,7 @@ manifest = []
 total_frames = 0
 
 for ad in targets:
-    ad_id = str(ad.get("ad_id", ad.get("ad_name", "")))
+    ad_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(ad.get("ad_id", ad.get("ad_name", ""))))[:64]
     ad_dir = os.path.join(creatives_dir, ad_id)
     if not os.path.isdir(ad_dir):
         continue

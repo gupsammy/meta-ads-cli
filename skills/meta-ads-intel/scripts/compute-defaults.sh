@@ -15,7 +15,7 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
-# Pull account-level insights for last 30 days
+# Pull account-level insights for last 14 days
 RAW=$("$CLI" insights get \
   --account-id "$ACCOUNT_ID" \
   --date-preset last_14d \

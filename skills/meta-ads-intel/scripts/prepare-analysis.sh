@@ -79,44 +79,43 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
     [.[] | select(.spend >= $min_spend)] |
 
     map(
-      . + {
-        action: (
-          if .frequency > $max_freq then "refresh"
-          elif .purchases == 0 then "pause"
-          elif $target_roas > 0 and $target_cpa > 0 then (
-            if .roas > ($target_roas * 1.2) and (.cpa != null and .cpa < ($target_cpa * 0.8)) then "scale"
-            elif .roas < ($target_roas * 0.8) or (.cpa != null and .cpa > ($target_cpa * 1.2)) then "reduce"
-            else "maintain"
-            end
-          )
-          elif $target_roas > 0 then (
-            if .roas > ($target_roas * 1.2) then "scale"
-            elif .roas < ($target_roas * 0.8) then "reduce"
-            else "maintain"
-            end
-          )
-          elif $target_cpa > 0 then (
-            if .cpa != null and .cpa < ($target_cpa * 0.8) then "scale"
-            elif .cpa != null and .cpa > ($target_cpa * 1.2) then "reduce"
-            else "maintain"
-            end
-          )
-          else "maintain"
-          end
-        ),
-        reason: (
-          if .frequency > $max_freq then ("frequency " + (.frequency | tostring) + " exceeds ceiling " + ($max_freq | tostring))
-          elif .purchases == 0 then ("zero purchases with spend " + (.spend | tostring))
-          elif $target_roas > 0 and .roas > ($target_roas * 1.2) and (.cpa != null and .cpa < ($target_cpa * 0.8)) then
-            ("ROAS " + (.roas | . * 100 | round / 100 | tostring) + " above target, CPA " + (.cpa | round | tostring) + " below target")
-          elif $target_roas > 0 and .roas < ($target_roas * 0.8) then
-            ("ROAS " + (.roas | . * 100 | round / 100 | tostring) + " below " + ($target_roas * 0.8 | . * 100 | round / 100 | tostring) + " threshold")
-          elif $target_cpa > 0 and .cpa != null and .cpa > ($target_cpa * 1.2) then
-            ("CPA " + (.cpa | round | tostring) + " above " + ($target_cpa * 1.2 | round | tostring) + " threshold")
-          else "within target range"
+      # Compute action + reason together so they never drift
+      . + (
+        if .frequency > $max_freq then
+          {action: "refresh", reason: ("frequency " + (.frequency | tostring) + " exceeds ceiling " + ($max_freq | tostring))}
+        elif .purchases == 0 then
+          {action: "pause", reason: ("zero purchases with spend " + (.spend | tostring))}
+        elif $target_roas > 0 and $target_cpa > 0 then (
+          if .roas > ($target_roas * 1.2) and (.cpa != null and .cpa < ($target_cpa * 0.8)) then
+            {action: "scale", reason: ("ROAS " + (.roas | . * 100 | round / 100 | tostring) + " above target, CPA " + (.cpa | round | tostring) + " below target")}
+          elif .roas < ($target_roas * 0.8) or (.cpa != null and .cpa > ($target_cpa * 1.2)) then
+            {action: "reduce", reason: (
+              if .roas < ($target_roas * 0.8) then "ROAS " + (.roas | . * 100 | round / 100 | tostring) + " below " + ($target_roas * 0.8 | . * 100 | round / 100 | tostring) + " threshold"
+              else "CPA " + (.cpa | round | tostring) + " above " + ($target_cpa * 1.2 | round | tostring) + " threshold"
+              end
+            )}
+          else {action: "maintain", reason: "within target range"}
           end
         )
-      } |
+        elif $target_roas > 0 then (
+          if .roas > ($target_roas * 1.2) then
+            {action: "scale", reason: ("ROAS " + (.roas | . * 100 | round / 100 | tostring) + " above " + ($target_roas | . * 100 | round / 100 | tostring) + " target")}
+          elif .roas < ($target_roas * 0.8) then
+            {action: "reduce", reason: ("ROAS " + (.roas | . * 100 | round / 100 | tostring) + " below " + ($target_roas * 0.8 | . * 100 | round / 100 | tostring) + " threshold")}
+          else {action: "maintain", reason: "within target range"}
+          end
+        )
+        elif $target_cpa > 0 then (
+          if .cpa != null and .cpa < ($target_cpa * 0.8) then
+            {action: "scale", reason: ("CPA " + (.cpa | round | tostring) + " below " + ($target_cpa * 0.8 | round | tostring) + " target")}
+          elif .cpa != null and .cpa > ($target_cpa * 1.2) then
+            {action: "reduce", reason: ("CPA " + (.cpa | round | tostring) + " above " + ($target_cpa * 1.2 | round | tostring) + " threshold")}
+          else {action: "maintain", reason: "within target range"}
+          end
+        )
+        else {action: "maintain", reason: "within target range"}
+        end
+      ) |
       # Keep only agent-useful fields
       {
         adset_name, campaign_name, action, reason,
@@ -174,7 +173,7 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
         {stage: "MOFU_view_to_cart", label: "view content → add to cart", rate: .rates.view_to_cart},
         {stage: "BOFU_cart_to_checkout", label: "add to cart → checkout", rate: .rates.cart_to_checkout},
         {stage: "BOFU_checkout_to_purchase", label: "checkout → purchase", rate: .rates.checkout_to_purchase}
-      ] | map(select(.rate != null and .rate > 0)) | sort_by(.rate) | .[0] // null
+      ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
     )
   }' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/funnel.json"
   echo "  funnel.json"
@@ -237,20 +236,12 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
           }
         else empty end
       ],
-      flagged: [
-        .[] | select(.campaign_id != null) |
-        ($recent_idx[.campaign_id] // null) as $recent_data |
-        if $recent_data then
-          {
-            campaign_name: .campaign_name,
-            roas_delta: (if .roas > 0 then (($recent_data.roas - .roas) / .roas * 100 | round) else null end),
-            cpa_delta: (if .cpa != null and .cpa > 0 and $recent_data.cpa != null then (($recent_data.cpa - .cpa) / .cpa * 100 | round) else null end)
-          } | select(
-            (.roas_delta != null and .roas_delta < -15) or
-            (.cpa_delta != null and .cpa_delta > 15)
-          )
-        else empty end
-      ]
+      flagged: []
+    } | . + {
+      flagged: [.campaigns[] | select(
+        (.roas_delta_pct != null and .roas_delta_pct < -15) or
+        (.cpa_delta_pct != null and .cpa_delta_pct > 15)
+      ) | {campaign_name, roas_delta_pct, cpa_delta_pct}]
     }' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/trends.json"
   echo "  trends.json"
 else
@@ -270,6 +261,11 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
     (map(select(.purchases > 0)) | sort_by(-.roas)) as $with_purchases |
     (map(select(.purchases == 0)) | sort_by(-.spend)) as $zero_purchase |
 
+    # Cap slices so winners and losers never overlap
+    ($with_purchases | length) as $total |
+    ([$top_n, ($total / 2 | floor)] | min) as $win_n |
+    ([$bottom_n, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
+
     {
       overview: {
         total_ads: length,
@@ -278,13 +274,13 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
         zero_purchase_count: ($zero_purchase | length),
         zero_purchase_total_spend: ($zero_purchase | map(.spend) | add // 0)
       },
-      winners: [$with_purchases[:$top_n][] | {
+      winners: [$with_purchases[:$win_n][] | {
         ad_name, campaign_name, creative_body, creative_title,
         spend, roas: (.roas | . * 100 | round / 100),
         cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
         purchases
       }],
-      losers: [$with_purchases[-$bottom_n:][] | {
+      losers: [if $lose_n > 0 then $with_purchases[-$lose_n:][] else empty end | {
         ad_name, campaign_name, creative_body, creative_title,
         spend, roas: (.roas | . * 100 | round / 100),
         cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
@@ -318,10 +314,15 @@ if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; th
     (map(select(.purchases > 0)) | sort_by(-.roas)) as $with_purchases |
     (map(select(.purchases == 0)) | sort_by(-.spend)) as $zero_purchase |
 
+    # Cap slices so winners and losers never overlap
+    ($with_purchases | length) as $total |
+    ([$top_n, ($total / 2 | floor)] | min) as $win_n |
+    ([$bottom_n, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
+
     # Tag and collect selected ads (preserving ad_id)
     [
-      ($with_purchases[:$top_n][]   | . + {rank: "winner"}),
-      ($with_purchases[-$bottom_n:][] | . + {rank: "loser"}),
+      ($with_purchases[:$win_n][]   | . + {rank: "winner"}),
+      (if $lose_n > 0 then $with_purchases[-$lose_n:][] else empty end | . + {rank: "loser"}),
       ($zero_purchase[:$zero_n][]   | . + {rank: "zero_purchase"})
     ] | map(
       (.ad_id | tostring) as $aid |

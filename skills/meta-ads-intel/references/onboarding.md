@@ -176,7 +176,20 @@ Write `~/.meta-ads-intel/config.json`:
 }
 ```
 
-Update `references/brand-copy.md` — replace the "Your Brand Context" section with ALL real data from Phases 3-4. Every field must have a real value. No TBD, no "to be filled later." If creative scan had no data (Scenario B or C), use the specific fallback text from Phase 4, not a generic placeholder.
+Write brand context to `~/.meta-ads-intel/brand-context.md` (user-owned, survives skill updates). Use this format:
+
+```markdown
+## Brand Context
+
+- Product: [real value from Phase 3b]
+- Price point: [real value from Phase 3c]
+- Audience: [real value from Phase 3d]
+- Proven hook angles: [from Phase 4 creative scan, or "Pending first analysis" if no data]
+- Winning format: [from Phase 4, or "Pending first analysis"]
+- Weak format: [from Phase 4, or "Pending first analysis"]
+```
+
+Every field must have a real value. No TBD, no "to be filled later." If creative scan had no data (Scenario B or C), use the specific fallback text from Phase 4, not a generic placeholder.
 
 Create data directories:
 ```bash

@@ -51,8 +51,9 @@ echo "  2. budget-actions.json    — pre-classified adset actions"
 echo "  3. funnel.json            — conversion funnel + bottleneck"
 echo "  4. trends.json            — period vs recent deltas"
 echo "  5. creative-analysis.json — top/bottom ads with copy text"
-if [[ -f "$HOME/.meta-ads-intel/creatives/manifest.json" ]]; then
-  CREATIVE_COUNT=$(jq 'length' "$HOME/.meta-ads-intel/creatives/manifest.json" 2>/dev/null || echo 0)
+_CREATIVES_DIR="$(dirname "${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}")/creatives"
+if [[ -f "$_CREATIVES_DIR/manifest.json" ]]; then
+  CREATIVE_COUNT=$(jq 'length' "$_CREATIVES_DIR/manifest.json" 2>/dev/null || echo 0)
   echo "  6. creatives/manifest.json — $CREATIVE_COUNT visual artifacts extracted"
 else
   echo "  6. (no visual artifacts — ffmpeg not available)"

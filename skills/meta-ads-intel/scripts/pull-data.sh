@@ -124,7 +124,8 @@ warn_if_truncated "$RAW_DIR/adsets.json" "period adsets"
   -o json > "$RAW_DIR/ads.json"
 warn_if_truncated "$RAW_DIR/ads.json" "period ads"
 
-# Creatives + account (cached at DATA_DIR level)
+# Creatives + account (cached at DATA_DIR level).
+# To refresh after launching new ads: rm ~/.meta-ads-intel/data/creatives-master.json
 if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
   "$CLI" ads list \
     --account-id "$ACCOUNT_ID" \
@@ -144,6 +145,10 @@ cp "$DATA_DIR/account-master.json" "$RAW_DIR/account.json"
 # Summarize _raw/ → summary files in run dir
 echo "  Summarizing period data..."
 bash "$SCRIPT_DIR/summarize-data.sh" "$RAW_DIR"
+if [[ ! -f "$RAW_DIR/campaigns-summary.json" ]]; then
+  echo "Error: summarize-data.sh produced no campaigns-summary.json" >&2
+  exit 1
+fi
 # Move summaries up to run dir (keep _raw/ clean)
 mv "$RAW_DIR"/campaigns-summary.json "$RUN_DIR/" 2>/dev/null || true
 mv "$RAW_DIR"/adsets-summary.json "$RUN_DIR/" 2>/dev/null || true
@@ -167,6 +172,9 @@ if [[ "$DATE_PRESET" != "last_7d" ]]; then
   warn_if_truncated "$RECENT_RAW/campaigns.json" "recent campaigns"
 
   bash "$SCRIPT_DIR/summarize-data.sh" "$RECENT_RAW"
+  if [[ ! -f "$RECENT_RAW/campaigns-summary.json" ]]; then
+    echo "Warning: recent-window summarize produced no campaigns-summary.json" >&2
+  fi
   mv "$RECENT_RAW"/campaigns-summary.json "$RECENT_DIR/" 2>/dev/null || true
   rm -rf "$RECENT_RAW"
 fi

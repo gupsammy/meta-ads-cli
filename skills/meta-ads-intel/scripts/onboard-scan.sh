@@ -63,8 +63,13 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" '[
 
 # 5. Compute output
 echo "$JOINED" | jq '{
-  winners: [sort_by(-.roas) | .[] | select(.purchases > 0)] | .[0:5] | [.[] | {ad_name, campaign_name, roas, cpa, creative_body, creative_title, format}],
-  losers: [sort_by(.roas) | .[] | select(.purchases > 0)] | .[0:5] | [.[] | {ad_name, campaign_name, roas, cpa, creative_body, creative_title, format}],
+  # Cap slices so winners and losers never overlap
+  ([sort_by(-.roas) | .[] | select(.purchases > 0)]) as $ranked |
+  ($ranked | length) as $total |
+  ([5, ($total / 2 | floor)] | min) as $win_n |
+  ([5, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
+  winners: [$ranked[:$win_n][] | {ad_name, campaign_name, roas, cpa, creative_body, creative_title, format}],
+  losers: [if $lose_n > 0 then $ranked[-$lose_n:][] else empty end | {ad_name, campaign_name, roas, cpa, creative_body, creative_title, format}],
   format_breakdown: {
     video: [.[] | select(.format == "video")] | length,
     image: [.[] | select(.format == "image")] | length,

@@ -27,6 +27,7 @@ Scripts handle all data pulling, summarization, and computation. Read only the 6
 ```
 ~/.meta-ads-intel/
 ├── config.json          # account + targets + analysis params
+├── brand-context.md     # product, audience, hooks (created by onboarding)
 ├── data/
 │   └── YYYY-MM-DD_HHMM/ # timestamped run (never overwritten)
 │       ├── _raw/          # raw API responses — NEVER read these
@@ -61,7 +62,7 @@ Proceed to Step 1.
 Read `~/.meta-ads-intel/config.json` for account ID, targets, analysis params.
 Read `references/thresholds.md` for budget classification interpretation rules and objective-specific guidance.
 Read `references/metrics.md` for field definitions and metric interpretation.
-Read `references/brand-copy.md` for copy psychology framework and brand context (used in Step 7).
+Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, copy specs, forbidden words). Read `~/.meta-ads-intel/brand-context.md` for user's brand context (product, audience, proven hooks). This file is created during onboarding and must exist in analysis mode.
 
 ### 2. Run Analysis Pipeline
 
