@@ -1,6 +1,6 @@
 {
   "name": "meta-ads",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Command-line interface for the Meta (Facebook) Marketing API",
   "type": "module",
   "bin": {
