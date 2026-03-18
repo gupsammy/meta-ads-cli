@@ -1,4 +1,8 @@
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 import { registerAuthCommands } from './commands/auth.js';
 import { registerAccountsCommands } from './commands/accounts.js';
 import { registerCampaignsCommands } from './commands/campaigns.js';
@@ -15,7 +19,7 @@ const program = new Command();
 program
   .name('meta-ads')
   .description('Command-line interface for the Meta (Facebook) Marketing API')
-  .version('0.1.0', '--version')
+  .version(version, '--version')
   .action(() => {
     program.help();
   });
