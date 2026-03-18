@@ -2,29 +2,47 @@
 set -e
 
 # Pull Meta Ads data via the meta-ads CLI.
-# Stores raw JSON + compressed summaries in dated directories.
+# Stores raw JSON in _raw/, summarizes, then runs prepare-analysis.sh
+# to produce 6 agent-ready analysis files.
+#
+# Account ID resolution (first match wins):
+#   1. META_ADS_ACCOUNT_ID env var
+#   2. ~/.meta-ads-intel/config.json → .account_id
+#   3. ~/.config/meta-ads-cli/config.json → .defaults.account_id
 #
 # Configuration (override via environment variables):
-#   META_ADS_ACCOUNT_ID  — Meta ad account ID (e.g., act_123456789)
 #   META_ADS_CLI         — Path to meta-ads CLI binary (default: "meta-ads")
-#   META_ADS_DATA_DIR    — Data storage directory (default: /tmp/meta-ads-intel)
+#   META_ADS_DATA_DIR    — Data storage directory (default: ~/.meta-ads-intel/data)
 #
 # Usage:
-#   pull-data.sh [date-preset]        Pull today + aggregated period data
-#   pull-data.sh --seed N             Backfill N days of historical daily snapshots
+#   pull-data.sh [date-preset]        Pull data into timestamped run directory
 #
 # Date presets: last_7d, last_14d, last_30d, last_90d, this_month, last_month
 
-ACCOUNT_ID="${META_ADS_ACCOUNT_ID:?Set META_ADS_ACCOUNT_ID environment variable (e.g., act_123456789)}"
+# ─── Account ID resolution ────────────────────────────────────────────────────
+SKILL_CONFIG="$HOME/.meta-ads-intel/config.json"
+CLI_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/meta-ads-cli/config.json"
+
+if [[ -n "${META_ADS_ACCOUNT_ID:-}" ]]; then
+  ACCOUNT_ID="$META_ADS_ACCOUNT_ID"
+  ACCOUNT_SOURCE="env"
+elif [[ -f "$SKILL_CONFIG" ]] && jq -e '.account_id' "$SKILL_CONFIG" &>/dev/null; then
+  ACCOUNT_ID=$(jq -r '.account_id' "$SKILL_CONFIG")
+  ACCOUNT_SOURCE="skill config"
+elif [[ -f "$CLI_CONFIG" ]] && jq -e '.defaults.account_id' "$CLI_CONFIG" &>/dev/null; then
+  ACCOUNT_ID=$(jq -r '.defaults.account_id' "$CLI_CONFIG")
+  ACCOUNT_SOURCE="CLI config"
+else
+  echo "Error: No account ID found." >&2
+  echo "  Set META_ADS_ACCOUNT_ID, run 'meta-ads setup', or create ~/.meta-ads-intel/config.json" >&2
+  exit 1
+fi
+
 CLI="${META_ADS_CLI:-meta-ads}"
-DATA_DIR="${META_ADS_DATA_DIR:-/tmp/meta-ads-intel}"
+DATA_DIR="${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Portable date: tries GNU coreutils first, falls back to BSD (macOS)
-portable_date_ago() {
-  local days=$1
-  date -d "$days days ago" '+%Y-%m-%d' 2>/dev/null || date -v-${days}d '+%Y-%m-%d'
-}
+echo "Account: $ACCOUNT_ID (source: $ACCOUNT_SOURCE)"
 
 # Warn when results hit the --limit cap (possible silent truncation)
 warn_if_truncated() {
@@ -42,102 +60,24 @@ if ! command -v jq &>/dev/null; then
 fi
 
 # Parse arguments
-SEED_DAYS=0
-DATE_PRESET="last_14d"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --seed)
-      SEED_DAYS="$2"
-      shift 2
-      ;;
-    *)
-      DATE_PRESET="$1"
-      shift
-      ;;
-  esac
-done
-
-# Helper: pull one day's data into a dated directory
-pull_day() {
-  local since="$1"
-  local until="$2"
-  local day_dir="$DATA_DIR/$since"
-  mkdir -p "$day_dir"
-
-  echo "  Pulling $since..."
-
-  # Campaign-level insights (daily)
-  "$CLI" insights get \
-    --account-id "$ACCOUNT_ID" \
-    --since "$since" --until "$until" \
-    --level campaign \
-    --time-increment 1 \
-    --limit 500 \
-    -o json > "$day_dir/campaigns.json"
-  warn_if_truncated "$day_dir/campaigns.json" "campaigns"
-
-  # Adset-level insights (daily)
-  "$CLI" insights get \
-    --account-id "$ACCOUNT_ID" \
-    --since "$since" --until "$until" \
-    --level adset \
-    --time-increment 1 \
-    --limit 500 \
-    -o json > "$day_dir/adsets.json"
-  warn_if_truncated "$day_dir/adsets.json" "adsets"
-
-  # Ad-level insights (daily)
-  "$CLI" insights get \
-    --account-id "$ACCOUNT_ID" \
-    --since "$since" --until "$until" \
-    --level ad \
-    --time-increment 1 \
-    --limit 500 \
-    -o json > "$day_dir/ads.json"
-  warn_if_truncated "$day_dir/ads.json" "ads"
-
-  # Ad creatives (not date-scoped — pull once, reuse).
-  # To refresh after adding new ads: delete creatives-master.json and re-run.
-  if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
-    "$CLI" ads list \
-      --account-id "$ACCOUNT_ID" \
-      --limit 500 \
-      -o json > "$DATA_DIR/creatives-master.json"
-    warn_if_truncated "$DATA_DIR/creatives-master.json" "ad creatives"
-  fi
-  cp "$DATA_DIR/creatives-master.json" "$day_dir/creatives.json"
-
-  # Account info (small, same for all days)
-  if [[ ! -f "$DATA_DIR/account-master.json" ]]; then
-    "$CLI" accounts get \
-      --account-id "$ACCOUNT_ID" \
-      -o json > "$DATA_DIR/account-master.json"
-  fi
-  cp "$DATA_DIR/account-master.json" "$day_dir/account.json"
-
-  # Run summarization for this day
-  bash "$SCRIPT_DIR/summarize-data.sh" "$day_dir"
-
-  local lines_c lines_a lines_ad
-  lines_c=$(wc -l < "$day_dir/campaigns.json" | tr -d ' ')
-  lines_a=$(wc -l < "$day_dir/adsets.json" | tr -d ' ')
-  lines_ad=$(wc -l < "$day_dir/ads.json" | tr -d ' ')
-  echo "    campaigns=$lines_c adsets=$lines_a ads=$lines_ad lines"
-}
+DATE_PRESET="${1:-last_14d}"
 
 # Update manifest.json and latest.json
 update_manifest() {
-  local dates=()
-  for d in "$DATA_DIR"/????-??-??; do
+  local entries=()
+  for d in "$DATA_DIR"/????-??-??* ; do
     if [[ -d "$d" ]]; then
-      dates+=("$(basename "$d")")
+      local name
+      name=$(basename "$d")
+      # Skip special directories
+      [[ "$name" == _* ]] && continue
+      entries+=("$name")
     fi
   done
 
-  IFS=$'\n' sorted=($(sort <<<"${dates[*]}")); unset IFS
+  IFS=$'\n' sorted=($(sort <<<"${entries[*]}")); unset IFS
 
-  printf '%s\n' "${sorted[@]}" | jq -R . | jq -s '{dates: ., count: length}' > "$DATA_DIR/manifest.json"
+  printf '%s\n' "${sorted[@]}" | jq -R . | jq -s '{entries: ., count: length}' > "$DATA_DIR/manifest.json"
 
   local count=${#sorted[@]}
   if [[ $count -gt 0 ]]; then
@@ -145,102 +85,105 @@ update_manifest() {
     echo "{\"latest\": \"${sorted[$last_idx]}\"}" | jq . > "$DATA_DIR/latest.json"
   fi
 
-  echo "Manifest updated: ${#sorted[@]} dates available"
+  echo "Manifest updated: ${#sorted[@]} entries available"
 }
 
 mkdir -p "$DATA_DIR"
 
-if [[ "$SEED_DAYS" -gt 0 ]]; then
-  echo "Seeding $SEED_DAYS days of data for $ACCOUNT_ID..."
+# ─── Timestamped run directory ──────────────────────────────────────────────
+RUN_DIR="$DATA_DIR/$(date '+%Y-%m-%d_%H%M')"
+RAW_DIR="$RUN_DIR/_raw"
+mkdir -p "$RAW_DIR"
 
-  for i in $(seq "$SEED_DAYS" -1 1); do
-    day_since=$(portable_date_ago "$i")
-    day_until="$day_since"
-    pull_day "$day_since" "$day_until"
-  done
+echo "Pulling Meta Ads data ($DATE_PRESET)..."
+echo "Run directory: $RUN_DIR"
 
-  today=$(date '+%Y-%m-%d')
-  pull_day "$today" "$today"
+# Pull period data into _raw/
+echo "  Pulling period data ($DATE_PRESET)..."
+"$CLI" insights get \
+  --account-id "$ACCOUNT_ID" \
+  --date-preset "$DATE_PRESET" \
+  --level campaign \
+  --limit 500 \
+  -o json > "$RAW_DIR/campaigns.json"
+warn_if_truncated "$RAW_DIR/campaigns.json" "period campaigns"
 
-  update_manifest
-  echo "Seed complete. $((SEED_DAYS + 1)) days saved to $DATA_DIR/"
+"$CLI" insights get \
+  --account-id "$ACCOUNT_ID" \
+  --date-preset "$DATE_PRESET" \
+  --level adset \
+  --limit 500 \
+  -o json > "$RAW_DIR/adsets.json"
+warn_if_truncated "$RAW_DIR/adsets.json" "period adsets"
 
-else
-  today=$(date '+%Y-%m-%d')
-  echo "Pulling Meta Ads data for $ACCOUNT_ID ($DATE_PRESET)..."
+"$CLI" insights get \
+  --account-id "$ACCOUNT_ID" \
+  --date-preset "$DATE_PRESET" \
+  --level ad \
+  --limit 500 \
+  -o json > "$RAW_DIR/ads.json"
+warn_if_truncated "$RAW_DIR/ads.json" "period ads"
 
-  # Pull today's daily snapshot
-  pull_day "$today" "$today"
+# Creatives + account (cached at DATA_DIR level).
+# To refresh after launching new ads: rm ~/.meta-ads-intel/data/creatives-master.json
+if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
+  "$CLI" ads list \
+    --account-id "$ACCOUNT_ID" \
+    --limit 500 \
+    -o json > "$DATA_DIR/creatives-master.json"
+  warn_if_truncated "$DATA_DIR/creatives-master.json" "ad creatives"
+fi
+cp "$DATA_DIR/creatives-master.json" "$RAW_DIR/creatives.json"
 
-  # Pull aggregated period data into _period subdirectory
-  period_dir="$DATA_DIR/_period"
-  mkdir -p "$period_dir"
+if [[ ! -f "$DATA_DIR/account-master.json" ]]; then
+  "$CLI" accounts get \
+    --account-id "$ACCOUNT_ID" \
+    -o json > "$DATA_DIR/account-master.json"
+fi
+cp "$DATA_DIR/account-master.json" "$RAW_DIR/account.json"
 
+# Summarize _raw/ → summary files in run dir
+echo "  Summarizing period data..."
+bash "$SCRIPT_DIR/summarize-data.sh" "$RAW_DIR"
+if [[ ! -f "$RAW_DIR/campaigns-summary.json" ]]; then
+  echo "Error: summarize-data.sh produced no campaigns-summary.json" >&2
+  exit 1
+fi
+# Move summaries up to run dir (keep _raw/ clean)
+mv "$RAW_DIR"/campaigns-summary.json "$RUN_DIR/" 2>/dev/null || true
+mv "$RAW_DIR"/adsets-summary.json "$RUN_DIR/" 2>/dev/null || true
+mv "$RAW_DIR"/ads-summary.json "$RUN_DIR/" 2>/dev/null || true
+
+# Pull recent window (last_7d) for trend comparison
+if [[ "$DATE_PRESET" != "last_7d" ]]; then
+  RECENT_RAW="$RUN_DIR/_recent_raw"
+  RECENT_DIR="$RUN_DIR/_recent"
+  mkdir -p "$RECENT_RAW" "$RECENT_DIR"
+  echo "  Pulling recent window (last_7d) for comparison..."
+
+  # Only pull campaign-level for recent window — trends.json only needs campaign data.
+  # Skipping adset/ad level saves 2 API calls per run.
   "$CLI" insights get \
     --account-id "$ACCOUNT_ID" \
-    --date-preset "$DATE_PRESET" \
+    --date-preset last_7d \
     --level campaign \
     --limit 500 \
-    -o json > "$period_dir/campaigns.json"
-  warn_if_truncated "$period_dir/campaigns.json" "period campaigns"
+    -o json > "$RECENT_RAW/campaigns.json"
+  warn_if_truncated "$RECENT_RAW/campaigns.json" "recent campaigns"
 
-  "$CLI" insights get \
-    --account-id "$ACCOUNT_ID" \
-    --date-preset "$DATE_PRESET" \
-    --level adset \
-    --limit 500 \
-    -o json > "$period_dir/adsets.json"
-  warn_if_truncated "$period_dir/adsets.json" "period adsets"
-
-  "$CLI" insights get \
-    --account-id "$ACCOUNT_ID" \
-    --date-preset "$DATE_PRESET" \
-    --level ad \
-    --limit 500 \
-    -o json > "$period_dir/ads.json"
-  warn_if_truncated "$period_dir/ads.json" "period ads"
-
-  cp "$DATA_DIR/creatives-master.json" "$period_dir/creatives.json" 2>/dev/null || true
-  cp "$DATA_DIR/account-master.json" "$period_dir/account.json" 2>/dev/null || true
-
-  # Summarize the period data
-  bash "$SCRIPT_DIR/summarize-data.sh" "$period_dir"
-
-  # Pull a recent window (last_7d) for period comparison
-  # Skip if user already requested last_7d (would be identical)
-  if [[ "$DATE_PRESET" != "last_7d" ]]; then
-    recent_dir="$DATA_DIR/_recent"
-    mkdir -p "$recent_dir"
-    echo "  Pulling recent window (last_7d) for comparison..."
-
-    "$CLI" insights get \
-      --account-id "$ACCOUNT_ID" \
-      --date-preset last_7d \
-      --level campaign \
-      --limit 500 \
-      -o json > "$recent_dir/campaigns.json"
-    warn_if_truncated "$recent_dir/campaigns.json" "recent campaigns"
-
-    "$CLI" insights get \
-      --account-id "$ACCOUNT_ID" \
-      --date-preset last_7d \
-      --level adset \
-      --limit 500 \
-      -o json > "$recent_dir/adsets.json"
-    warn_if_truncated "$recent_dir/adsets.json" "recent adsets"
-
-    "$CLI" insights get \
-      --account-id "$ACCOUNT_ID" \
-      --date-preset last_7d \
-      --level ad \
-      --limit 500 \
-      -o json > "$recent_dir/ads.json"
-    warn_if_truncated "$recent_dir/ads.json" "recent ads"
-
-    cp "$DATA_DIR/creatives-master.json" "$recent_dir/creatives.json" 2>/dev/null || true
-    bash "$SCRIPT_DIR/summarize-data.sh" "$recent_dir"
+  bash "$SCRIPT_DIR/summarize-data.sh" "$RECENT_RAW"
+  if [[ ! -f "$RECENT_RAW/campaigns-summary.json" ]]; then
+    echo "Warning: recent-window summarize produced no campaigns-summary.json" >&2
   fi
-
-  update_manifest
-  echo "Data pull complete. Files saved to $DATA_DIR/"
+  mv "$RECENT_RAW"/campaigns-summary.json "$RECENT_DIR/" 2>/dev/null || true
+  rm -rf "$RECENT_RAW"
 fi
+
+# Run prepare-analysis.sh → 6 agent-ready files
+echo "  Preparing analysis files..."
+bash "$SCRIPT_DIR/prepare-analysis.sh" "$RUN_DIR"
+
+update_manifest
+echo ""
+echo "Data pull complete. Run directory: $RUN_DIR"
+echo "Agent reads: account-health.json, budget-actions.json, funnel.json, trends.json, creative-analysis.json"

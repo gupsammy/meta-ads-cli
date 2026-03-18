@@ -1,162 +1,208 @@
 # First-Run Onboarding
 
-This guide is loaded when Step 0 detects unconfigured state. Walk the user through each phase sequentially. Skip phases that are already satisfied.
+Triggered when Step 0 detects no `~/.meta-ads-intel/config.json`. Six phases: install, account discovery, brand context, creative scan, target setting, write config.
 
-When asking questions: use the AskUserQuestion tool if available. Otherwise, ask conversationally and wait for the user's response.
+Onboarding is its own session. Do NOT continue to analysis after onboarding completes. The user runs /meta-ads-intel again for their first analysis.
 
-## Phase 1: Install meta-ads CLI
+When asking questions: use AskUserQuestion tool if available. Otherwise, ask conversationally.
 
-Check if `meta-ads` is on PATH:
+## Phase 1: Install & Setup
+
+Check CLI and dependencies:
 ```bash
-which meta-ads && meta-ads --version
+which meta-ads && meta-ads --version; which jq; which ffmpeg
 ```
 
-If not found, install it:
+If meta-ads not found — install globally (scripts require `meta-ads` on PATH, npx is not sufficient):
 ```bash
 npm i -g meta-ads
 ```
+If npm fails with permissions: suggest `sudo npm i -g meta-ads` or recommend nvm.
 
-If npm is unavailable, tell the user they can use `npx meta-ads` as an alternative (each command prefixed with `npx`). Verify installation:
+If jq missing: `brew install jq` (macOS) or `apt install jq` (Linux).
+If ffmpeg missing: note "ffmpeg not installed — visual creative analysis will be skipped in future runs. Install with `brew install ffmpeg` when ready." NOT blocking.
+
+### Authentication
+
+Non-interactive shell environments cannot prompt for stdin — `meta-ads setup` without flags will fail. Use the non-interactive flow:
+
+1. Ask the user for their Meta API access token (via AskUserQuestion).
+2. Run setup with `--non-interactive`:
 ```bash
-meta-ads --version
+meta-ads setup --non-interactive --token "<token>" --skip-account
 ```
-
-Also verify `jq` is installed (`which jq`). If missing, tell the user to install it (`brew install jq` on macOS, `apt install jq` on Linux).
-
-## Phase 2: Authentication
-
-Check existing auth:
-```bash
-meta-ads auth status -o json
-```
-
-If authenticated (token present), show the masked token and skip to Phase 3.
-
-If not authenticated:
-
-1. Tell the user they need a Meta access token with `ads_read` and `ads_management` permissions.
-2. Direct them to the Graph API Explorer: https://developers.facebook.com/tools/explorer/
-3. Instruct them to:
-   - Select their app (or use "Meta App" default)
-   - Click "Generate Access Token"
-   - Under Permissions, add: `ads_read`, `ads_management`
-   - Copy the generated token
-4. Ask the user to paste their token.
-5. Authenticate using the environment variable approach (preferred — avoids exposing the token in shell history):
-```bash
-export META_ADS_ACCESS_TOKEN=<pasted_token>
-meta-ads auth status -o json
-```
-Alternatively, save the token persistently (note: this writes the token to shell history):
-```bash
-meta-ads auth login --token <pasted_token>
-```
-6. Verify and check token longevity:
-```bash
-meta-ads auth status -o json
-```
-7. If the token is short-lived (< 24h expiry), warn the user and suggest exchanging it for a long-lived token via their app settings, or note they will need to re-authenticate periodically.
-
-## Phase 3: Auto-Fetch Account Info
-
-Fetch the user's ad accounts:
+3. List accounts to find the right one:
 ```bash
 meta-ads accounts list -o json
 ```
-
-If multiple accounts are returned, present a numbered list and ask the user which account to configure. If only one account, use it automatically.
-
-From the selected account, extract:
-- Account ID (e.g., `act_123456789`)
-- Account Name
-- Currency (e.g., USD, EUR, INR)
-
-Also fetch active campaigns to get a baseline:
+4. Set the default account:
 ```bash
-meta-ads campaigns list --account-id <account_id> --status ACTIVE -o json
+meta-ads setup --non-interactive --token "<token>" --account-id "<account_id>"
+```
+5. Verify:
+```bash
+meta-ads auth status -o json
 ```
 
-Note the number of active campaigns and their objectives for context.
+## Phase 2: Account Discovery
 
-## Phase 4: Auto-Fetch Brand Context
-
-Ask the user: "What is your website or store URL? (optional — press Enter to skip)"
-
-If the user provides a URL:
-- Fetch the page and extract: product descriptions, price range, target audience signals, brand voice/tone.
-- Use this to populate the "Your Brand Context" section of `brand-copy.md`.
-
-Regardless of website, fetch ad performance and creative content separately (the insights endpoint returns metrics but not creative fields):
-
-First, get ad-level performance metrics:
+Read account from CLI config (always use the `act_` prefixed form — e.g., `act_903322579535495`):
 ```bash
-meta-ads insights get --account-id <account_id> --date-preset last_30d --level ad -o json
+jq -r '.defaults.account_id' ~/.config/meta-ads-cli/config.json
 ```
 
-Then, fetch creative content (body, title, image URL) for ads in the account:
+Fetch account name and currency:
 ```bash
-meta-ads ads list --account-id <account_id> -o json
+meta-ads accounts get --account-id <account_id> -o json
 ```
 
-Join the two datasets by `ad_id`. Identify the top 3 ads by ROAS (or by lowest CPA if ROAS is unavailable) and extract their `creative_body` and `creative_title` to identify proven hook angles and winning formats.
-
-Also identify the bottom 3 performers to note weak formats.
-
-Use this data to auto-fill the brand context:
-- Product: from website or inferred from ad creative copy
-- Price point: from website or ask user
-- Audience: from website or inferred from targeting/copy
-- Proven hook angles: from top-performing ad copy
-- Winning format: from top performers' creative type
-- Weak format: from bottom performers' creative type
-
-If the website was skipped and product/price/audience can't be reliably inferred from ad copy, ask the user directly for:
-- What product or service do you sell?
-- What is your price range?
-- Who is your target audience?
-
-## Phase 5: Ask User for Thresholds
-
-These depend on business margins and cannot be auto-detected. Fetch current performance to suggest smart defaults:
-
-From the insights data already pulled (or pull if not yet available):
+Get current performance for smart threshold defaults:
 ```bash
-meta-ads insights get --account-id <account_id> --date-preset last_30d --level account -o json
+bash <skill-dir>/scripts/compute-defaults.sh <account_id>
+```
+`<skill-dir>` is the directory containing this file's parent SKILL.md. Resolve from file path at runtime.
+
+Output is `{"spend": N, "purchases": N, "revenue": N, "roas": N, "current_cpa": N, "current_roas": N}`.
+
+Store results — used in Phase 4 (creative scan) and Phase 5 (target setting).
+
+## Phase 3: Brand Context
+
+This is the most important phase.
+
+CRITICAL: Steps 3a, 3b, 3c, and 3d are FOUR SEPARATE interactions. Each step gets its own AskUserQuestion call. Do NOT combine multiple steps into one AskUserQuestion. Do NOT skip any step even if you think you already know the answer from the website. Confirm each one individually.
+
+### Step 3a: Website URL
+
+Ask via AskUserQuestion: "What is your website or store URL?"
+Options:
+- The actual domain if known from context (e.g., "maisonx.in")
+- "I don't have a website"
+- Other (free text)
+
+If URL provided — run a comprehensive site review. Do NOT just scrape the homepage; most e-commerce sites need deeper crawling (collection pages, product pages, about page, sitemap).
+
+If subagents are available, spawn one for a thorough website review:
+- Prompt: "Analyze <URL> comprehensively. Fetch the homepage, then discover the full catalog via sitemap.xml or by following navigation links. Visit at least 3-5 product/collection pages. Extract: all product categories, specific products with prices, brand positioning/voice, target audience signals, fabric/material details, unique selling points. Return a structured summary."
+- The subagent handles 404s, JS SPAs, and sitemap discovery automatically.
+
+Store the findings — use them to pre-fill suggestions in Steps 3b-3d. A comprehensive site review means confident product/price/audience suggestions rather than asking the user to type everything from scratch.
+
+If subagents are unavailable, fall back to WebFetch: scrape homepage, then try /sitemap.xml to discover pages, then fetch 3-5 key pages (collections, products, about).
+
+If all web access fails (auth wall, JS SPA, timeout): note gracefully ("Couldn't access the site — I'll ask you directly instead"), proceed to manual questions.
+
+If user has no website: skip extraction, proceed to manual questions.
+
+### Step 3b: Product/Service Description
+
+If website was scraped successfully, pre-fill: "Based on your website, it looks like you sell [extracted description]. Is this accurate, or would you refine it?"
+
+If no website data, ask directly: "Describe your product or service in one sentence. (e.g., 'Premium linen clothing for women')"
+
+This must be a free-text answer, not a category picker.
+
+### Step 3c: Price Range
+
+This step is MANDATORY even if you extracted prices from the website. Website prices may not reflect the full range, bundles, or AOV.
+
+If website data included price signals: "I found prices around [range] on your site. What is the typical price range and average order value? (e.g., Rs 1,499-2,999 per piece, AOV Rs 2,500)"
+
+If no website data: "What is your typical price range? (e.g., Rs 2,000-8,000 per piece)"
+
+### Step 3d: Target Audience
+
+Ask: "Describe your target audience — age, location, interests. (e.g., Women 25-45, urban India, fashion-forward)"
+
+If website data included audience signals (testimonials, imagery, language), suggest based on those.
+
+## Phase 4: Creative Scan
+
+Run the lightweight creative scan to identify proven patterns:
+```bash
+bash <skill-dir>/scripts/onboard-scan.sh <account_id>
 ```
 
-Calculate current average CPA and blended ROAS from the account-level data.
+Read the JSON output. Three scenarios:
 
-Ask the user for each threshold, providing their current performance as context:
+**Scenario A: ads_with_purchases > 0** (most common)
+- Read the `winners` array — identify common patterns in creative_body/creative_title:
+  - What hooks do top ads use? (urgency, social proof, sensory, discount, etc.)
+  - What format dominates winners? (video vs image from format_breakdown)
+- Read the `losers` array — identify what losers have in common that winners lack
+- Set:
+  - Proven hook angles = patterns from winner copy
+  - Winning format = dominant format in winners
+  - Weak format = dominant format in losers
 
-1. Target CPA: "Your current average CPA is [X]. What is your target CPA (breakeven or goal acquisition cost)?"
-2. Target ROAS: "Your current blended ROAS is [X]. What is your target ROAS? (e.g., 3.0 means $1 spent returns $3)"
-3. Max Frequency: "Default is 5.0 (ads shown more than this per person indicate audience saturation). Want to keep the default or adjust?"
-4. Min Spend Threshold: "What minimum spend should an ad set have before it's included in recommendations? This filters out noise from low-spend entities." Suggest a sensible default based on currency (e.g., 500 for INR, 10 for USD, 10 for EUR).
+**Scenario B: ads_with_purchases == 0, total_ads > 0**
+- Ads exist but no purchase data yet
+- Set fallback: "No purchase data yet. Hook angles and format preferences will be populated after the first analysis with purchase data."
+
+**Scenario C: total_ads == 0**
+- Brand new account, no ads
+- Set fallback: "No ads in account yet. Creative patterns will be populated after ads start running."
+
+## Phase 5: Target Setting
+
+Present current CPA/ROAS from compute-defaults.sh (Phase 2). Ask for targets — batch into one AskUserQuestion when possible:
+
+1. Target CPA — "Your current average CPA is [current_cpa]. What is your target CPA (breakeven or goal acquisition cost)?"
+2. Target ROAS — "Your current blended ROAS is [current_roas]. What is your target ROAS?"
+3. Max Frequency — "Default is 5.0 (above this = audience saturation). Keep default or adjust?"
+4. Min Spend Threshold — "Minimum spend to include an ad set in recommendations. Filters noise." Suggest sensible default based on currency (1000 for INR, 10 for USD/EUR).
+
+If compute-defaults.sh returned null CPA (zero purchases): note "No purchase data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
 
 ## Phase 6: Write Configuration
 
-Update `references/thresholds.md` — replace all placeholder values:
-- `YOUR_ACCOUNT_ID` with the actual account ID
-- `YOUR_ACCOUNT_NAME` with the actual account name
-- `YOUR_CURRENCY` with the actual currency
-- Target CPA `0` with the user's target
-- Target ROAS `0` with the user's target
-- Min Spend Threshold `0` with the user's chosen value
-- Max Frequency `5.0` — update only if user changed it
+Write `~/.meta-ads-intel/config.json`:
+```json
+{
+  "account_id": "<account_id>",
+  "account_name": "<name>",
+  "currency": "<currency>",
+  "targets": {
+    "cpa": "<user_target>",
+    "roas": "<user_target>",
+    "max_frequency": "<user_target>",
+    "min_spend": "<user_target>"
+  },
+  "analysis": {
+    "top_n": 15,
+    "bottom_n": 10,
+    "zero_purchase_n": 10
+  }
+}
+```
 
-Update `references/brand-copy.md` — replace the "Your Brand Context" placeholders:
-- `YOUR_PRODUCT_DESCRIPTION` with product info (from website or user)
-- `YOUR_PRICE_RANGE` with price info (from website or user)
-- `YOUR_TARGET_AUDIENCE` with audience info (from website or user)
-- Proven hook angles, winning format, weak format from ad performance data
+Write brand context to `~/.meta-ads-intel/brand-context.md` (user-owned, survives skill updates). Use this format:
 
-Print a summary of what was configured:
+```markdown
+## Brand Context
+
+- Product: [real value from Phase 3b]
+- Price point: [real value from Phase 3c]
+- Audience: [real value from Phase 3d]
+- Proven hook angles: [from Phase 4 creative scan, or "Pending first analysis" if no data]
+- Winning format: [from Phase 4, or "Pending first analysis"]
+- Weak format: [from Phase 4, or "Pending first analysis"]
+```
+
+Every field must have a real value. No TBD, no "to be filled later." If creative scan had no data (Scenario B or C), use the specific fallback text from Phase 4, not a generic placeholder.
+
+Create data directories:
+```bash
+mkdir -p ~/.meta-ads-intel/data ~/.meta-ads-intel/reports ~/.meta-ads-intel/creatives
+```
+
+Print summary:
 - Account: [name] ([id])
 - Currency: [currency]
 - Targets: CPA [X], ROAS [X], Frequency [X], Min Spend [X]
-- Brand context: [filled/skipped]
-- Active campaigns: [count]
+- Brand context: [product summary]
+- Creative patterns: [hook angles or "pending first analysis"]
 
-Tell the user: "Setup complete. Proceeding with your first analysis."
+Final line: **"Setup complete. Run /meta-ads-intel again to start your first analysis."**
 
-Continue to Step 1 of the main SKILL.md process.
+STOP HERE. Do not proceed to any analysis steps.

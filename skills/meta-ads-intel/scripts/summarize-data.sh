@@ -78,12 +78,10 @@ fi
 # Summarize ads — join with creative content from creatives.json
 if [[ -f "$DIR/ads.json" ]]; then
   if [[ -f "$DIR/creatives.json" ]]; then
-    # Build creative lookup: ad_id -> creative fields
+    # Build creative lookup: ad_id -> body + title only (URLs handled by prepare-analysis.sh from _raw/)
     jq 'INDEX((.data // .)[] ; .id) | map_values({
       creative_body: .creative_body,
-      creative_title: .creative_title,
-      creative_image_url: .creative_image_url,
-      creative_thumbnail_url: .creative_thumbnail_url
+      creative_title: .creative_title
     })' "$DIR/creatives.json" > "$DIR/_creative_lookup.json" 2>/dev/null || echo '{}' > "$DIR/_creative_lookup.json"
 
     jq --slurpfile creatives "$DIR/_creative_lookup.json" '[(.data // .)[] |
@@ -107,9 +105,7 @@ if [[ -f "$DIR/ads.json" ]]; then
         revenue: ((.action_values // []) | map(select(.action_type == "purchase")) | .[0].value // "0" | tonumber),
         roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
         creative_body: (if $aid != "" then ($creatives[0][$aid].creative_body // "") else "" end),
-        creative_title: (if $aid != "" then ($creatives[0][$aid].creative_title // "") else "" end),
-        creative_image_url: (if $aid != "" then ($creatives[0][$aid].creative_image_url // "") else "" end),
-        creative_thumbnail_url: (if $aid != "" then ($creatives[0][$aid].creative_thumbnail_url // "") else "" end)
+        creative_title: (if $aid != "" then ($creatives[0][$aid].creative_title // "") else "" end)
       } | . + {cpa: (if .purchases > 0 then (.spend / .purchases) else null end)}]' \
       "$DIR/ads.json" > "$DIR/ads-summary.json"
 

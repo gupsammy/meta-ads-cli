@@ -1,136 +1,167 @@
 ---
 name: meta-ads-intel
 description: >
-  Analyze Meta (Facebook) Ads performance with budget optimization, creative
-  analysis, trend detection, funnel diagnostics, and actionable recommendations.
-  Use when user says "analyze my ads", "meta ads report", "campaign performance",
-  "budget optimization", "creative analysis", "ads intelligence", "weekly ads brief",
-  "ad account health", or wants performance insights from Meta advertising data.
-  Not for creating/updating campaigns or writing ad copy.
+  This skill should be used when the user says "analyze my ads", "meta ads report",
+  "campaign performance", "budget optimization", "creative analysis", "ads intelligence",
+  "weekly ads brief", "ad account health", or wants performance insights from Meta
+  advertising data. Not for creating/updating campaigns or writing ad copy.
 license: MIT
 compatibility: >
   Requires meta-ads CLI (npm i -g meta-ads), jq, and optionally ffmpeg/ffprobe
   for visual creative analysis. Node.js >= 20.
 metadata:
   author: gupsammy
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Meta Ads Intelligence
 
 Analyze Meta Ads campaign data and produce actionable intelligence: budget optimization, creative performance rankings, trend analysis, funnel diagnostics, and a strategic decision brief.
 
-Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: last_7d, last_14d, last_30d, last_90d, this_month, last_month, this_week_mon_today.
+Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: last_7d, last_14d, last_30d, last_90d, this_month, last_month.
 
-## Setup
+## Data Architecture
 
-Data storage defaults to `/tmp/meta-ads-intel/` (cleared on reboot). For persistent data across sessions:
-```bash
-export META_ADS_DATA_DIR=~/.meta-ads-intel-data
+Scripts handle all data pulling, summarization, and computation. Read only the 6 pre-computed analysis files — never raw data.
+
+```
+~/.meta-ads-intel/
+├── config.json          # account + targets + analysis params
+├── brand-context.md     # product, audience, hooks (created by onboarding)
+├── data/
+│   └── YYYY-MM-DD_HHMM/ # timestamped run (never overwritten)
+│       ├── _raw/          # raw API responses — NEVER read these
+│       ├── _recent/       # recent window summaries (for trends)
+│       ├── account-health.json     ── agent reads these 6 ──
+│       ├── budget-actions.json
+│       ├── funnel.json
+│       ├── trends.json
+│       ├── creative-analysis.json
+│       └── creative-media.json     # for analyze-creatives.sh only
+├── reports/
+└── creatives/
 ```
 
 ## Process
 
-### 0. First-Run Pre-Check
+### 0. Mode Gate
 
-Before anything else, check if the skill is configured:
+Check config:
+```bash
+jq -e '.account_id' ~/.meta-ads-intel/config.json 2>/dev/null
+```
 
-1. CLI available: `which meta-ads || npx meta-ads --version` succeeds
-2. `references/thresholds.md` does NOT contain `YOUR_ACCOUNT_ID`
-3. `references/brand-copy.md` does NOT contain `YOUR_PRODUCT_DESCRIPTION`
+**ONBOARDING MODE** (config missing or invalid):
+Read `references/onboarding.md` and follow that flow completely. Onboarding is a dedicated session — it installs the CLI, collects brand context, runs a creative scan, sets targets, and writes config.json. When onboarding says "Setup complete" — STOP. Do NOT continue to Step 1. The user runs /meta-ads-intel again for their first analysis.
 
-If all three conditions are met — skip to Step 1.
-
-If any check fails — read `references/onboarding.md` and follow that flow. The onboarding will install the CLI, authenticate, fetch account data, ask the user for thresholds, and auto-fill both config files. Once onboarding completes, continue to Step 1.
+**ANALYSIS MODE** (config exists and valid):
+Proceed to Step 1.
 
 ### 1. Load Configuration
 
-Read `references/thresholds.md` for account ID, CLI path, performance targets, min thresholds.
+Read `~/.meta-ads-intel/config.json` for account ID, targets, analysis params.
+Read `references/thresholds.md` for budget classification interpretation rules and objective-specific guidance.
 Read `references/metrics.md` for field definitions and metric interpretation.
-Read `references/brand-copy.md` for copy psychology framework and brand context. Use during Step 4 creative analysis.
+Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, copy specs, forbidden words). Read `~/.meta-ads-intel/brand-context.md` for user's brand context (product, audience, proven hooks). This file is created during onboarding and must exist in analysis mode.
 
-### 2. Pull Fresh Data
-
-```bash
-bash <skill-dir>/scripts/pull-data.sh $ARGUMENTS
-```
-`<skill-dir>` is the directory containing this SKILL.md. Resolve it from this file's path at runtime.
-
-If script fails (auth expired, network), report error and stop.
-
-Read SUMMARY files from the data directory's `_period/` subdirectory:
-- `campaigns-summary.json` — campaign metrics (spend, purchases, revenue, roas, cpa, funnel counts)
-- `adsets-summary.json` — adset metrics with campaign context
-- `ads-summary.json` — ad metrics with creative content (body, title, image_url)
-
-Read `manifest.json` for available historical dates.
-
-**CRITICAL: Never read raw campaigns.json, adsets.json, or ads.json. These contain 40+ duplicate action types per row. Always use *-summary.json variants.**
-
-### 3. Budget Optimization
-
-For each adset with spend above min threshold from thresholds.md:
-
-1. Compare `cpa` and `roas` against targets.
-2. Check `frequency` against ceiling (high frequency = audience saturation).
-3. Account for campaign objective (OUTCOME_SALES vs LINK_CLICKS).
-
-Classify each adset using the Budget Classification Rules in `references/thresholds.md`.
-
-### 3.5. Period Comparison & Trend Analysis
-
-**Period comparison (default).** The data pull automatically fetches both the requested period (`_period/`) and a recent 7-day window (`_recent/`) unless the user requested last_7d. When `_recent/` exists:
-
-1. Read `_recent/campaigns-summary.json` and `_period/campaigns-summary.json`.
-2. Match campaigns by `campaign_id`. Compute deltas between recent window and full period: spend rate (recent daily avg vs period daily avg), CPA change, ROAS change, frequency change.
-3. Flag metrics that worsened by >15% in the recent window vs the full period.
-4. Present as a "Recent vs Period" scorecard in the Decision Brief.
-
-**Daily WoW comparison (when historical data exists).** Also check `manifest.json` for daily snapshots. If a date from ~7 days ago exists, compute week-over-week deltas and classify trends: improving/stable/declining.
-
-No `_recent/` and no daily history → skip trend analysis, recommend `pull-data.sh --seed 7`.
-
-### 4. Creative Performance
-
-For each ad with spend above threshold:
-
-1. Rank by ROAS within parent campaign.
-2. Top 20% = winners, bottom 20% = losers.
-3. Flag zero-purchase ads with significant spend.
-4. Analyze `creative_body`, `creative_title` — what messaging angles win/lose.
-
-### 4.5. Visual Creative Analysis
-
-Write `creative-targets.json` with top 5 and bottom 5 ads by ROAS.
+### 2. Run Analysis Pipeline
 
 ```bash
-bash <skill-dir>/scripts/analyze-creatives.sh
+bash <skill-dir>/scripts/run-analysis.sh $ARGUMENTS
 ```
-`<skill-dir>` — same as Step 2.
+`<skill-dir>` is the directory containing this SKILL.md. Resolve from this file's path at runtime.
 
-Read extracted frames via Read tool. Compare visual patterns: hooks, text overlays, color palettes, product visibility across winners vs losers.
+This single script chains the full pipeline: pull raw API data → summarize → compute 6 analysis files → extract visual creative artifacts (if ffmpeg available). No further scripts to run.
+
+If ffmpeg is not available, the script logs "SKIPPED: ffmpeg/ffprobe not installed" with install instructions. Note this in the analysis — visual creative analysis was skipped, and the user can install ffmpeg (`brew install ffmpeg`) for future runs.
+
+If script fails (auth expired, network, missing account), report error and stop.
+
+Identify the run directory from script output (printed as "Run directory: ..."). All subsequent reads come from this directory.
+
+### 3. Account Health
+
+Read `account-health.json` from the run directory.
+
+This contains: total spend, purchases, revenue, blended CPA, blended ROAS, comparisons vs targets (delta %). Present as the headline scorecard. Flag any metric missing target by >20%.
+
+### 4. Budget Actions
+
+Read `budget-actions.json` from the run directory.
+
+Pre-classified by `prepare-analysis.sh` into scale/reduce/pause/refresh/maintain buckets with reason strings. The agent's job is to add judgment:
+
+- Learning phase? New campaigns (< 7 days) classified as "reduce" or "pause" may need protection.
+- Objective context? A TOFU awareness campaign classified as "reduce" on CPA may still be strategically correct.
+- Scale recommendations — suggest specific budget increase amounts (e.g., "increase daily budget by 20%").
+- Pause recommendations — check if the adset is the only one in its campaign before recommending pause.
+
+Use `references/thresholds.md` interpretation rules for nuance.
 
 ### 5. Funnel Analysis
 
-Sum funnel counts from campaigns-summary: `view_content` → `add_to_cart` → `initiate_checkout` → `purchases`. Compute conversion rates between stages. Identify biggest drop-off:
-- Low view_content/spend = targeting issue (TOFU)
-- Low cart rate = product page issue (MOFU)
-- Low checkout completion = payment/trust issue (BOFU)
+Read `funnel.json` from the run directory.
 
-### 6. Decision Brief
+Contains: stage counts (impressions → clicks → landing pages → view content → add to cart → checkout → purchase), conversion rates between stages, and identified bottleneck (lowest conversion rate stage).
 
-Synthesize into:
-- **Account Health**: spend, purchases, blended CPA/ROAS vs targets
-- **Trends**: WoW summary, biggest movers
-- **Top 3 Actions**: highest-leverage changes with budget amounts and expected impact
-- **Risks**: fatigue, underperforming spend, drifting campaigns
-- **Creative Insights**: messaging/visual patterns correlating with performance
-- **Watch Items**: learning-phase campaigns, insufficient-data tests
+Interpret the bottleneck:
+- TOFU (click/landing): targeting or ad relevance issue
+- MOFU (view_to_cart): product page or offer issue
+- BOFU (cart_to_checkout, checkout_to_purchase): trust, payment, or friction issue
 
-### 7. Save Output
+Connect to specific campaign or adset recommendations from Step 4.
 
-Write to `~/.meta-ads-intel/`:
+### 6. Trend Analysis
+
+Read `trends.json` from the run directory.
+
+If `available: true`: contains per-campaign deltas between the full period and the recent 7-day window. The `flagged` array highlights campaigns where ROAS declined >15% or CPA rose >15%.
+
+Identify concerning patterns: accelerating fatigue (frequency rising + ROAS declining), spend shifting without performance improvement, campaigns that were strong in the period but weakening recently.
+
+If `available: false`: note that trend data requires a comparison window and recommend running with `last_14d` preset (default).
+
+### 7. Creative Analysis
+
+Read `creative-analysis.json` from the run directory. This is the highest-value analysis step — where agent intelligence matters most. Do not skip or abbreviate any sub-step.
+
+Contains pre-filtered top N winners (by ROAS), bottom N losers, and zero-purchase ads with significant spend. Each includes `creative_body` and `creative_title` — the actual ad copy text.
+
+MUST complete all of the following:
+
+1. Classify each winner's copy using the Four Horsemen framework from `references/brand-copy.md` (Money/Time/Status/Fear). State which lever each winning ad pulls and why. If creative_body is empty (video-only ad), note this — it's a signal that video outperforms static copy.
+
+2. Compare messaging angles: what do winners have in common that losers lack? Look for patterns in specificity vs vagueness, emotional vs rational tone, sentence length, use of numbers, opening hooks. Quote specific copy from winners and losers to illustrate.
+
+3. Flag zero-purchase ads with their total wasted spend. These are budget leaks — recommend pause or replacement with a winning angle.
+
+4. If `~/.meta-ads-intel/creatives/manifest.json` exists (visual artifacts were extracted by run-analysis.sh), read the manifest and then read 2-3 winner frames and 2-3 loser frames via Read tool. Compare visual patterns: opening hooks, text overlays, color palettes, product visibility, video pacing. If manifest doesn't exist, note that visual analysis was skipped (ffmpeg not installed).
+
+5. Synthesize: which creative directions should be scaled (new variants in the same angle), which should be killed, and what net-new angles are untested?
+
+### 8. Decision Brief
+
+Synthesize all analysis into:
+
+- Account Health: spend, purchases, blended CPA/ROAS vs targets
+- Trends: period vs recent scorecard, biggest movers
+- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact
+- Risks: fatigue signals, underperforming spend, drifting campaigns
+- Creative Insights: messaging/visual patterns correlating with performance
+- Watch Items: learning-phase campaigns, insufficient-data tests
+
+### 9. Save Output
+
+Write to `~/.meta-ads-intel/reports/`:
 1. `report-{YYYY-MM-DD}.md` — full markdown brief
-2. `data-{YYYY-MM-DD}.json` — structured JSON (summary, funnel, campaigns, adsets, top/bottom ads, visual analysis, recommendations)
+2. `data-{YYYY-MM-DD}.json` — structured JSON (account health, funnel, budget actions, trends, creative rankings, recommendations)
 
-Return concise summary: account health, top 3 actions, report paths.
+Return concise summary: account health headline, top 3 actions, report paths.
+
+## Rules
+
+- NEVER read files in `_raw/` directories. These contain verbose API responses with 40+ duplicate action types per row.
+- NEVER read `*-summary.json` files directly. These are intermediate files consumed by `prepare-analysis.sh`.
+- NEVER read `creative-media.json` — it's input for `analyze-creatives.sh` only.
+- Only read the 5 analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
+- All monetary values in analysis files are in the account's currency (not minor units — scripts already convert).
