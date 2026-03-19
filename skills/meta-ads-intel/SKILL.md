@@ -101,7 +101,7 @@ Use `references/thresholds.md` interpretation rules for nuance.
 
 Read `funnel.json` from the run directory.
 
-Filtered to OUTCOME_SALES campaigns only — non-sales campaigns (traffic, awareness) are excluded to prevent funnel dilution. The `filter` object shows how many campaigns were included vs excluded and how much non-sales spend was omitted. Contains: stage counts (impressions → clicks → landing pages → add to cart → checkout → purchase), conversion rates between stages, and identified bottleneck (lowest conversion rate stage). The `engagement` block reports `view_content` count and `browse_depth` (view_content / landing_page_views) as a separate metric — browse_depth > 1 means visitors view multiple products per session.
+Filtered to OUTCOME_SALES campaigns only — non-sales campaigns (traffic, awareness) are excluded to prevent funnel dilution. The `filter` object shows how many campaigns were included vs excluded and how much non-sales spend was omitted. Contains: stage counts (impressions → clicks → landing pages → add to cart → checkout → purchase), conversion rates between stages, identified bottleneck (lowest conversion rate stage), and an `engagement` block. The `engagement` block reports `view_content` count and `browse_depth` (view_content / landing_page_views) as a separate metric — browse_depth > 1 means visitors view multiple products per session.
 
 Interpret the bottleneck:
 - TOFU (click/landing): targeting or ad relevance issue

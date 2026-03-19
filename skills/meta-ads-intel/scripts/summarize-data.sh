@@ -84,7 +84,9 @@ if [[ -f "$DIR/adsets.json" ]]; then
     roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
     add_to_cart: ((.actions // []) | (map(select(.action_type == "omni_add_to_cart")) + map(select(.action_type == "add_to_cart"))) | .[0].value // "0" | tonumber),
     initiate_checkout: ((.actions // []) | (map(select(.action_type == "omni_initiated_checkout")) + map(select(.action_type == "initiate_checkout"))) | .[0].value // "0" | tonumber),
-    view_content: ((.actions // []) | (map(select(.action_type == "omni_view_content")) + map(select(.action_type == "view_content"))) | .[0].value // "0" | tonumber)
+    view_content: ((.actions // []) | (map(select(.action_type == "omni_view_content")) + map(select(.action_type == "view_content"))) | .[0].value // "0" | tonumber),
+    link_clicks: ((.actions // []) | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
+    landing_page_views: ((.actions // []) | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber)
   } | . + {cpa: (if .purchases > 0 then (.spend / .purchases) else null end)}]' \
     "$DIR/adsets.json" > "$DIR/adsets-summary.json"
   echo "  adsets-summary.json: $(wc -l < "$DIR/adsets-summary.json" | tr -d ' ') lines"
