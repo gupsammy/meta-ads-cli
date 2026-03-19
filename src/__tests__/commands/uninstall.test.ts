@@ -24,10 +24,13 @@ vi.mock('../../auth.js', () => ({
 import { registerUninstallCommand } from '../../commands/uninstall.js';
 
 describe('uninstall command', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let exitSpy: any;
 
   beforeEach(() => {
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined) => {
+      throw new Error(`process.exit(${code})`);
+    });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
@@ -44,7 +47,7 @@ describe('uninstall command', () => {
     program.exitOverride();
     registerUninstallCommand(program);
 
-    await program.parseAsync(['node', 'meta-ads', 'uninstall']);
+    await expect(program.parseAsync(['node', 'meta-ads', 'uninstall'])).rejects.toThrow();
     expect(exitSpy).toHaveBeenCalledWith(2);
 
     Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });

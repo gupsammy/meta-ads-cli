@@ -204,16 +204,20 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
     rates: {
       click_rate: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else null end),
       landing_rate: (if .link_clicks > 0 then (.landing_page_views / .link_clicks * 100 | . * 100 | round / 100) else null end),
-      view_to_cart: (if .view_content > 0 then (.add_to_cart / .view_content * 100 | . * 100 | round / 100) else null end),
+      add_to_cart_rate: (if .landing_page_views > 0 then (.add_to_cart / .landing_page_views * 100 | . * 100 | round / 100) else null end),
       cart_to_checkout: (if .add_to_cart > 0 then (.initiate_checkout / .add_to_cart * 100 | . * 100 | round / 100) else null end),
       checkout_to_purchase: (if .initiate_checkout > 0 then (.purchases / .initiate_checkout * 100 | . * 100 | round / 100) else null end)
+    },
+    engagement: {
+      view_content: .view_content,
+      browse_depth: (if .landing_page_views > 0 then (.view_content / .landing_page_views | . * 100 | round / 100) else null end)
     }
   } | . + {
     bottleneck: (
       [
         {stage: "TOFU_click", label: "impression → click", rate: .rates.click_rate},
         {stage: "TOFU_landing", label: "click → landing page", rate: .rates.landing_rate},
-        {stage: "MOFU_view_to_cart", label: "view content → add to cart", rate: .rates.view_to_cart},
+        {stage: "MOFU_landing_to_cart", label: "landing page → add to cart", rate: .rates.add_to_cart_rate},
         {stage: "BOFU_cart_to_checkout", label: "add to cart → checkout", rate: .rates.cart_to_checkout},
         {stage: "BOFU_checkout_to_purchase", label: "checkout → purchase", rate: .rates.checkout_to_purchase}
       ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
