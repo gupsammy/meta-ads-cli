@@ -44,8 +44,8 @@ OBJ_LOOKUP=$(echo "$CAMPAIGNS_META" | jq 'INDEX((.data // .)[]; .id) | map_value
   (.objective // "UNKNOWN") |
   if . == "LINK_CLICKS" then "OUTCOME_TRAFFIC"
   elif . == "CONVERSIONS" or . == "PRODUCT_CATALOG_SALES" or . == "OFFER_CLAIMS" then "OUTCOME_SALES"
-  elif . == "BRAND_AWARENESS" or . == "REACH" or . == "LOCAL_AWARENESS" or . == "STORE_VISITS" then "OUTCOME_AWARENESS"
-  elif . == "POST_ENGAGEMENT" or . == "PAGE_LIKES" or . == "VIDEO_VIEWS" or . == "EVENT_RESPONSES" or . == "MESSAGES" then "OUTCOME_ENGAGEMENT"
+  elif . == "BRAND_AWARENESS" or . == "REACH" or . == "LOCAL_AWARENESS" or . == "STORE_VISITS" or . == "VIDEO_VIEWS" then "OUTCOME_AWARENESS"
+  elif . == "POST_ENGAGEMENT" or . == "PAGE_LIKES" or . == "EVENT_RESPONSES" or . == "MESSAGES" then "OUTCOME_ENGAGEMENT"
   elif . == "LEAD_GENERATION" then "OUTCOME_LEADS"
   elif . == "APP_INSTALLS" then "OUTCOME_APP_PROMOTION"
   else . end
@@ -68,6 +68,7 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     cpc: ((.cpc // "0") | tonumber),
     ctr: ((.ctr // "0") | tonumber),
     cpm: ((.cpm // "0") | tonumber),
+    link_clicks: ($actions | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
     purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
@@ -85,6 +86,8 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
     cpl: (if .lead > 0 then (.spend / .lead) else null end),
     cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+    link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
+    link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end),
     format: (if .has_thumbnail then "video" elif .has_image then "image" else "unknown" end)
   }
 ]')
@@ -103,7 +106,7 @@ echo "$JOINED" | jq '
     ),
     sort_metric: (
       if .objective == "OUTCOME_SALES" then .roas
-      elif .objective == "OUTCOME_TRAFFIC" then .ctr
+      elif .objective == "OUTCOME_TRAFFIC" then .link_click_ctr
       elif .objective == "OUTCOME_ENGAGEMENT" then (if .cpe != null and .cpe > 0 then (1 / .cpe) else 0 end)
       elif .objective == "OUTCOME_LEADS" then (if .cpl != null and .cpl > 0 then (1 / .cpl) else 0 end)
       elif .objective == "OUTCOME_APP_PROMOTION" then (if .cpi != null and .cpi > 0 then (1 / .cpi) else 0 end)
@@ -111,20 +114,29 @@ echo "$JOINED" | jq '
     )
   }) |
 
-  # Cap slices so winners and losers never overlap
-  ([sort_by(-.sort_metric) | .[] | select(.has_conversion)]) as $ranked |
-  ($ranked | length) as $total |
-  ([5, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
-  ([5, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
+  # Group by objective and rank within each group
+  ([.[].objective] | unique | sort) as $objectives |
   {
-    winners: [$ranked[:$win_n][] | {ad_name, campaign_name, objective, roas, cpa, cpc, ctr, cpe, cpl, cpi, creative_body, creative_title, format}],
-    losers: [if $lose_n > 0 then $ranked[-$lose_n:][] else empty end | {ad_name, campaign_name, objective, roas, cpa, cpc, ctr, cpe, cpl, cpi, creative_body, creative_title, format}],
+    by_objective: (
+      [$objectives[] as $obj |
+        [.[] | select(.objective == $obj)] |
+        ([sort_by(-.sort_metric) | .[] | select(.has_conversion)]) as $ranked |
+        ($ranked | length) as $total |
+        ([5, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
+        ([5, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
+        {($obj): {
+          winners: [$ranked[:$win_n][] | {ad_name, campaign_name, objective, roas, cpa, cpc, ctr, link_click_ctr, link_click_cpc, cpe, cpl, cpi, creative_body, creative_title, format}],
+          losers: [if $lose_n > 0 then $ranked[-$lose_n:][] else empty end | {ad_name, campaign_name, objective, roas, cpa, cpc, ctr, link_click_ctr, link_click_cpc, cpe, cpl, cpi, creative_body, creative_title, format}],
+          total_ads: length,
+          ads_with_conversions: ($ranked | length)
+        }}
+      ] | add // {}
+    ),
     format_breakdown: {
       video: [.[] | select(.format == "video")] | length,
       image: [.[] | select(.format == "image")] | length,
       unknown: [.[] | select(.format == "unknown")] | length
     },
-    objectives_detected: ([.[].objective] | unique | sort),
-    total_ads: length,
-    ads_with_conversions: [$ranked[] | select(.has_conversion)] | length
+    objectives_detected: $objectives,
+    total_ads: length
   }'

@@ -29,6 +29,13 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
+# Require v2 config (per-objective targets from onboarding v2)
+CONFIG_VER=$(jq -r '.config_version // 1' "$CONFIG")
+if [[ "$CONFIG_VER" -lt 2 ]]; then
+  echo "Error: config.json is v1 format. Re-run onboarding to upgrade to v2 (per-objective targets)." >&2
+  exit 1
+fi
+
 # Load shared config values
 TOP_N=$(jq -r '.analysis.top_n // 15' "$CONFIG")
 BOTTOM_N=$(jq -r '.analysis.bottom_n // 10' "$CONFIG")
@@ -458,10 +465,13 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate},
-                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate},
-                  {stage: "lead_conversion", label: "landing page \u2192 lead", rate: .rates.lead_conversion_rate}
-                ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
+                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: 2.0},
+                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: 60.0},
+                  {stage: "lead_conversion", label: "landing page \u2192 lead", rate: .rates.lead_conversion_rate, expected: 5.0}
+                ] | map(select(.rate != null)) |
+                map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
+                sort_by(-.gap) | .[0] // null |
+                if . then {stage, label, rate} else null end
               )
             }
 
@@ -481,9 +491,12 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate},
-                  {stage: "install_rate", label: "click \u2192 install", rate: .rates.install_rate}
-                ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
+                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: 1.5},
+                  {stage: "install_rate", label: "click \u2192 install", rate: .rates.install_rate, expected: 5.0}
+                ] | map(select(.rate != null)) |
+                map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
+                sort_by(-.gap) | .[0] // null |
+                if . then {stage, label, rate} else null end
               )
             }
 
@@ -658,7 +671,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
           },
           winners: [$with_conv[:$win_n][] | {
             ad_name, campaign_name, creative_body, creative_title, spend,
-            roas: (.roas | . * 100 | round / 100),
+            roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
             cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
             cpc: (.cpc | . * 100 | round / 100),
             ctr: (.ctr | . * 100 | round / 100),
@@ -669,7 +682,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
           }],
           losers: [if $lose_n > 0 then $with_conv[-$lose_n:][] else empty end | {
             ad_name, campaign_name, creative_body, creative_title, spend,
-            roas: (.roas | . * 100 | round / 100),
+            roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
             cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
             cpc: (.cpc | . * 100 | round / 100),
             ctr: (.ctr | . * 100 | round / 100),
@@ -736,7 +749,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; th
         ad_name: .ad_name,
         objective: .objective,
         rank: .rank,
-        roas: (.roas | . * 100 | round / 100),
+        roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
         cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
         spend: .spend,
         creative_image_url: ($url_lookup[$aid].creative_image_url // ""),

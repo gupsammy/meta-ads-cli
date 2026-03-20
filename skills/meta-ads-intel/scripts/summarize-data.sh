@@ -37,8 +37,8 @@ if [[ -f "$OBJ_LOOKUP" && -s "$OBJ_LOOKUP" ]]; then
   jq 'map_values(
     if . == "LINK_CLICKS" then "OUTCOME_TRAFFIC"
     elif . == "CONVERSIONS" or . == "PRODUCT_CATALOG_SALES" or . == "OFFER_CLAIMS" then "OUTCOME_SALES"
-    elif . == "BRAND_AWARENESS" or . == "REACH" or . == "LOCAL_AWARENESS" or . == "STORE_VISITS" then "OUTCOME_AWARENESS"
-    elif . == "POST_ENGAGEMENT" or . == "PAGE_LIKES" or . == "VIDEO_VIEWS" or . == "EVENT_RESPONSES" or . == "MESSAGES" then "OUTCOME_ENGAGEMENT"
+    elif . == "BRAND_AWARENESS" or . == "REACH" or . == "LOCAL_AWARENESS" or . == "STORE_VISITS" or . == "VIDEO_VIEWS" then "OUTCOME_AWARENESS"
+    elif . == "POST_ENGAGEMENT" or . == "PAGE_LIKES" or . == "EVENT_RESPONSES" or . == "MESSAGES" then "OUTCOME_ENGAGEMENT"
     elif . == "LEAD_GENERATION" then "OUTCOME_LEADS"
     elif . == "APP_INSTALLS" then "OUTCOME_APP_PROMOTION"
     else . end
