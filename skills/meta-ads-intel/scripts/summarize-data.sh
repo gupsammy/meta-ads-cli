@@ -68,7 +68,7 @@ if [[ -f "$DIR/campaigns.json" ]]; then
     # Sales
     purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
+    roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     # Funnel
     add_to_cart: ($actions | (map(select(.action_type == "omni_add_to_cart")) + map(select(.action_type == "add_to_cart"))) | .[0].value // "0" | tonumber),
     initiate_checkout: ($actions | (map(select(.action_type == "omni_initiated_checkout")) + map(select(.action_type == "initiate_checkout"))) | .[0].value // "0" | tonumber),
@@ -88,7 +88,9 @@ if [[ -f "$DIR/campaigns.json" ]]; then
     cpa: (if .purchases > 0 then (.spend / .purchases) else null end),
     cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
     cpl: (if .lead > 0 then (.spend / .lead) else null end),
-    cpi: (if .app_install > 0 then (.spend / .app_install) else null end)
+    cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+    link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
+    link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end)
   }]' \
     "$DIR/campaigns.json" > "$DIR/campaigns-summary.json"
   echo "  campaigns-summary.json: $(wc -l < "$DIR/campaigns-summary.json" | tr -d ' ') lines"
@@ -119,7 +121,7 @@ if [[ -f "$DIR/adsets.json" ]]; then
     # Sales
     purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
+    roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     # Funnel
     add_to_cart: ($actions | (map(select(.action_type == "omni_add_to_cart")) + map(select(.action_type == "add_to_cart"))) | .[0].value // "0" | tonumber),
     initiate_checkout: ($actions | (map(select(.action_type == "omni_initiated_checkout")) + map(select(.action_type == "initiate_checkout"))) | .[0].value // "0" | tonumber),
@@ -139,7 +141,9 @@ if [[ -f "$DIR/adsets.json" ]]; then
     cpa: (if .purchases > 0 then (.spend / .purchases) else null end),
     cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
     cpl: (if .lead > 0 then (.spend / .lead) else null end),
-    cpi: (if .app_install > 0 then (.spend / .app_install) else null end)
+    cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+    link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
+    link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end)
   }]' \
     "$DIR/adsets.json" > "$DIR/adsets-summary.json"
   echo "  adsets-summary.json: $(wc -l < "$DIR/adsets-summary.json" | tr -d ' ') lines"
@@ -173,12 +177,13 @@ if [[ -f "$DIR/ads.json" ]]; then
         clicks: ((.clicks // "0") | tonumber),
         cpc: ((.cpc // "0") | tonumber),
         ctr: ((.ctr // "0") | tonumber),
+        cpm: ((.cpm // "0") | tonumber),
         frequency: ((.frequency // "0") | tonumber),
         reach: ((.reach // "0") | tonumber),
         # Sales
         purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
         revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-        roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
+        roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
         # Traffic/Funnel
         link_clicks: ($actions | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
         landing_page_views: ($actions | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber),
@@ -198,7 +203,9 @@ if [[ -f "$DIR/ads.json" ]]; then
         cpa: (if .purchases > 0 then (.spend / .purchases) else null end),
         cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
         cpl: (if .lead > 0 then (.spend / .lead) else null end),
-        cpi: (if .app_install > 0 then (.spend / .app_install) else null end)
+        cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+        link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
+        link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end)
       }]' \
       "$DIR/ads.json" > "$DIR/ads-summary.json"
 
@@ -222,12 +229,13 @@ if [[ -f "$DIR/ads.json" ]]; then
       clicks: ((.clicks // "0") | tonumber),
       cpc: ((.cpc // "0") | tonumber),
       ctr: ((.ctr // "0") | tonumber),
+      cpm: ((.cpm // "0") | tonumber),
       frequency: ((.frequency // "0") | tonumber),
       reach: ((.reach // "0") | tonumber),
       # Sales
       purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
       revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
+      roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
       # Traffic/Funnel
       link_clicks: ($actions | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
       landing_page_views: ($actions | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber),
@@ -244,7 +252,9 @@ if [[ -f "$DIR/ads.json" ]]; then
       cpa: (if .purchases > 0 then (.spend / .purchases) else null end),
       cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
       cpl: (if .lead > 0 then (.spend / .lead) else null end),
-      cpi: (if .app_install > 0 then (.spend / .app_install) else null end)
+      cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+      link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
+      link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end)
     }]' \
       "$DIR/ads.json" > "$DIR/ads-summary.json"
   fi

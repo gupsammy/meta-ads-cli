@@ -57,6 +57,7 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
   ((.ad_id // "") | tostring) as $aid |
   ((.campaign_id // "") | tostring) as $cid |
   ((.actions // []) as $raw_a | ($raw_a | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw_a else . end) as $actions |
+  ((.action_values // []) as $raw_av | ($raw_av | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw_av else . end) as $action_vals |
   {
     ad_id: (.ad_id // null),
     ad_name: (.ad_name // null),
@@ -68,8 +69,8 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     ctr: ((.ctr // "0") | tonumber),
     cpm: ((.cpm // "0") | tonumber),
     purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    revenue: ((.action_values // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
+    revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
+    roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
     link_clicks: ($actions | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
     post_engagement: ($actions | map(select(.action_type == "post_engagement")) | .[0].value // "0" | tonumber),
     lead: ($actions | (map(select(.action_type == "onsite_conversion.lead_grouped")) + map(select(.action_type == "lead"))) | .[0].value // "0" | tonumber),
@@ -113,7 +114,7 @@ echo "$JOINED" | jq '
   # Cap slices so winners and losers never overlap
   ([sort_by(-.sort_metric) | .[] | select(.has_conversion)]) as $ranked |
   ($ranked | length) as $total |
-  ([5, ($total / 2 | floor)] | min) as $win_n |
+  ([5, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
   ([5, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
   {
     winners: [$ranked[:$win_n][] | {ad_name, campaign_name, objective, roas, cpa, cpc, ctr, cpe, cpl, cpi, creative_body, creative_title, format}],

@@ -117,10 +117,9 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
           elif $obj == "OUTCOME_AWARENESS" then
             ($obj_targets.cpm // 0) as $t_cpm |
             ($obj_targets.max_frequency // ($targets.global.max_frequency // 5.0)) as $t_freq |
-            (map(.frequency) | add // 0) as $freq_sum |
             {
               cpm: (if $imp > 0 then ($spend / $imp * 1000 | . * 100 | round / 100) else null end),
-              avg_frequency: (if length > 0 then ($freq_sum / length | . * 100 | round / 100) else null end),
+              avg_frequency: (if $rch > 0 then ($imp / $rch | . * 100 | round / 100) else null end),
               reach_rate: (if $imp > 0 then ($rch / $imp * 100 | . * 100 | round / 100) else null end),
               target_cpm: $t_cpm,
               target_max_frequency: $t_freq,
@@ -229,16 +228,16 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
               if .link_clicks == 0 then
                 {action: "pause", reason: ("zero link clicks with spend " + (.spend | tostring))}
               elif $t_cpc > 0 and $t_ctr > 0 then (
-                if .cpc < ($t_cpc * 0.8) and .ctr > ($t_ctr * 1.2) then
-                  {action: "scale", reason: ("CPC " + (.cpc | . * 100 | round / 100 | tostring) + " below target, CTR " + (.ctr | . * 100 | round / 100 | tostring) + "% above target")}
-                elif .cpc > ($t_cpc * 1.2) or .ctr < ($t_ctr * 0.8) then
+                if .link_click_cpc != null and .link_click_cpc < ($t_cpc * 0.8) and .link_click_ctr > ($t_ctr * 1.2) then
+                  {action: "scale", reason: ("CPC " + (.link_click_cpc | . * 100 | round / 100 | tostring) + " below target, CTR " + (.link_click_ctr | . * 100 | round / 100 | tostring) + "% above target")}
+                elif (.link_click_cpc != null and .link_click_cpc > ($t_cpc * 1.2)) or .link_click_ctr < ($t_ctr * 0.8) then
                   {action: "reduce", reason: (
-                    if .cpc > ($t_cpc * 1.2) then "CPC " + (.cpc | . * 100 | round / 100 | tostring) + " above threshold"
-                    else "CTR " + (.ctr | . * 100 | round / 100 | tostring) + "% below threshold" end)}
+                    if .link_click_cpc != null and .link_click_cpc > ($t_cpc * 1.2) then "CPC " + (.link_click_cpc | . * 100 | round / 100 | tostring) + " above threshold"
+                    else "CTR " + (.link_click_ctr | . * 100 | round / 100 | tostring) + "% below threshold" end)}
                 else {action: "maintain", reason: "within target range"} end)
               elif $t_cpc > 0 then (
-                if .cpc < ($t_cpc * 0.8) then {action: "scale", reason: ("CPC " + (.cpc | . * 100 | round / 100 | tostring) + " below target")}
-                elif .cpc > ($t_cpc * 1.2) then {action: "reduce", reason: ("CPC " + (.cpc | . * 100 | round / 100 | tostring) + " above threshold")}
+                if .link_click_cpc != null and .link_click_cpc < ($t_cpc * 0.8) then {action: "scale", reason: ("CPC " + (.link_click_cpc | . * 100 | round / 100 | tostring) + " below target")}
+                elif .link_click_cpc != null and .link_click_cpc > ($t_cpc * 1.2) then {action: "reduce", reason: ("CPC " + (.link_click_cpc | . * 100 | round / 100 | tostring) + " above threshold")}
                 else {action: "maintain", reason: "within target range"} end)
               else {action: "maintain", reason: "no targets set"} end
             )
@@ -296,7 +295,7 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
           if $obj == "OUTCOME_SALES" then
             {roas: (.roas | . * 100 | round / 100), cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end), purchases}
           elif $obj == "OUTCOME_TRAFFIC" then
-            {cpc: (.cpc | . * 100 | round / 100), ctr: (.ctr | . * 100 | round / 100), link_clicks}
+            {cpc: (if .link_click_cpc then (.link_click_cpc | . * 100 | round / 100) else null end), ctr: (.link_click_ctr | . * 100 | round / 100), link_clicks}
           elif $obj == "OUTCOME_AWARENESS" then
             {cpm: (.cpm | . * 100 | round / 100), reach}
           elif $obj == "OUTCOME_ENGAGEMENT" then
@@ -369,12 +368,15 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "TOFU_click", label: "impression \u2192 click", rate: .rates.click_rate},
-                  {stage: "TOFU_landing", label: "click \u2192 landing page", rate: .rates.landing_rate},
-                  {stage: "MOFU_landing_to_cart", label: "landing page \u2192 add to cart", rate: .rates.add_to_cart_rate},
-                  {stage: "BOFU_cart_to_checkout", label: "add to cart \u2192 checkout", rate: .rates.cart_to_checkout},
-                  {stage: "BOFU_checkout_to_purchase", label: "checkout \u2192 purchase", rate: .rates.checkout_to_purchase}
-                ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
+                  {stage: "TOFU_click", label: "impression \u2192 click", rate: .rates.click_rate, expected: 3.0},
+                  {stage: "TOFU_landing", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: 70.0},
+                  {stage: "MOFU_landing_to_cart", label: "landing page \u2192 add to cart", rate: .rates.add_to_cart_rate, expected: 8.0},
+                  {stage: "BOFU_cart_to_checkout", label: "add to cart \u2192 checkout", rate: .rates.cart_to_checkout, expected: 50.0},
+                  {stage: "BOFU_checkout_to_purchase", label: "checkout \u2192 purchase", rate: .rates.checkout_to_purchase, expected: 60.0}
+                ] | map(select(.rate != null)) |
+                map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
+                sort_by(-.gap) | .[0] // null |
+                if . then {stage, label, rate} else null end
               )
             }
 
@@ -405,14 +407,13 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             (map(.impressions) | add // 0) as $imp |
             (map(.reach) | add // 0) as $rch |
             (map(.spend) | add // 0) as $spend |
-            (map(.frequency) | add // 0) as $freq_sum |
             {
               type: "reach_efficiency",
               total_reach: $rch,
               total_impressions: $imp,
               total_spend: $spend,
               cpm: (if $imp > 0 then ($spend / $imp * 1000 | . * 100 | round / 100) else null end),
-              avg_frequency: (if length > 0 then ($freq_sum / length | . * 100 | round / 100) else null end),
+              avg_frequency: (if $rch > 0 then ($imp / $rch | . * 100 | round / 100) else null end),
               reach_rate: (if $imp > 0 then ($rch / $imp * 100 | . * 100 | round / 100) else null end),
               note: "No conversion funnel for awareness \u2014 showing reach efficiency metrics"
             }
@@ -541,14 +542,14 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
               (($r.roas - .roas) / .roas * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_TRAFFIC" then {
-            period_cpc: (.cpc | . * 100 | round / 100),
-            recent_cpc: ($r.cpc | . * 100 | round / 100),
-            period_ctr: (.ctr | . * 100 | round / 100),
-            recent_ctr: ($r.ctr | . * 100 | round / 100),
-            cpc_delta_pct: (if .cpc > 0 and $r.cpc != null then
-              (($r.cpc - .cpc) / .cpc * 100 | round) else null end),
-            ctr_delta_pct: (if .ctr > 0 and $r.ctr != null then
-              (($r.ctr - .ctr) / .ctr * 100 | round) else null end)
+            period_cpc: (if .link_click_cpc then (.link_click_cpc | . * 100 | round / 100) else null end),
+            recent_cpc: (if $r.link_click_cpc then ($r.link_click_cpc | . * 100 | round / 100) else null end),
+            period_ctr: (.link_click_ctr | . * 100 | round / 100),
+            recent_ctr: ($r.link_click_ctr | . * 100 | round / 100),
+            cpc_delta_pct: (if .link_click_cpc != null and .link_click_cpc > 0 and $r.link_click_cpc != null then
+              (($r.link_click_cpc - .link_click_cpc) / .link_click_cpc * 100 | round) else null end),
+            ctr_delta_pct: (if .link_click_ctr > 0 and $r.link_click_ctr != null then
+              (($r.link_click_ctr - .link_click_ctr) / .link_click_ctr * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_AWARENESS" then {
             period_cpm: (.cpm | . * 100 | round / 100),
@@ -623,7 +624,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
         (if $obj == "OUTCOME_SALES" then
           {conv_field: "purchases", sort_field: "roas", sort_dir: "desc", zero_label: "zero_purchase"}
         elif $obj == "OUTCOME_TRAFFIC" then
-          {conv_field: "link_clicks", sort_field: "ctr", sort_dir: "desc", zero_label: "zero_clicks"}
+          {conv_field: "link_clicks", sort_field: "link_click_ctr", sort_dir: "desc", zero_label: "zero_clicks"}
         elif $obj == "OUTCOME_AWARENESS" then
           {conv_field: "impressions", sort_field: "cpm", sort_dir: "asc", zero_label: "zero_impressions"}
         elif $obj == "OUTCOME_ENGAGEMENT" then
@@ -645,7 +646,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
 
         # Proportional allocation: cap to available ads
         ($with_conv | length) as $total |
-        ([$top_n, ($total / 2 | floor)] | min) as $win_n |
+        ([$top_n, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
         ([$bottom_n, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
 
         {($obj): {
@@ -709,7 +710,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; th
 
       # Same sort logic as creative-analysis.json
       (if $obj == "OUTCOME_SALES" then {conv: "purchases", sort: "roas", dir: "desc"}
-       elif $obj == "OUTCOME_TRAFFIC" then {conv: "link_clicks", sort: "ctr", dir: "desc"}
+       elif $obj == "OUTCOME_TRAFFIC" then {conv: "link_clicks", sort: "link_click_ctr", dir: "desc"}
        elif $obj == "OUTCOME_AWARENESS" then {conv: "impressions", sort: "cpm", dir: "asc"}
        elif $obj == "OUTCOME_ENGAGEMENT" then {conv: "post_engagement", sort: "cpe", dir: "asc"}
        elif $obj == "OUTCOME_LEADS" then {conv: "lead", sort: "cpl", dir: "asc"}
@@ -722,7 +723,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; th
       (map(select(.[$meta.conv] == 0)) | sort_by(-.spend)) as $zero_conv |
 
       ($with_conv | length) as $total |
-      ([$top_n, ($total / 2 | floor)] | min) as $win_n |
+      ([$top_n, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
       ([$bottom_n, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
 
       ($with_conv[:$win_n][]   | . + {rank: "winner"}),

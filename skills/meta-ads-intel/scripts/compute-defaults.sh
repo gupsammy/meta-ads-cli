@@ -62,7 +62,7 @@ echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" '
       frequency: ((.frequency // "0") | tonumber),
       purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
       revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
+      roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
       link_clicks: ($actions | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
       landing_page_views: ($actions | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber),
       post_engagement: ($actions | map(select(.action_type == "post_engagement")) | .[0].value // "0" | tonumber),
@@ -103,12 +103,11 @@ echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" '
     elif $obj == "OUTCOME_AWARENESS" then
       (map(.impressions) | add // 0) as $imp |
       (map(.reach) | add // 0) as $rch |
-      (map(.frequency) | add // 0) as $freq |
       {
         impressions: $imp,
         reach: $rch,
         current_cpm: (if $imp > 0 then ($spend / $imp * 1000 | . * 100 | round / 100) else null end),
-        avg_frequency: (if $count > 0 then ($freq / $count | . * 100 | round / 100) else null end)
+        avg_frequency: (if $rch > 0 then ($imp / $rch | . * 100 | round / 100) else null end)
       }
     elif $obj == "OUTCOME_ENGAGEMENT" then
       (map(.post_engagement) | add // 0) as $pe |
