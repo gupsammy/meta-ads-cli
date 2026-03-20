@@ -204,7 +204,7 @@ Write `~/.meta-ads-intel/config.json`:
     },
     "OUTCOME_TRAFFIC": {
       "cpc": 5,
-      "target_ctr": 2.0
+      "ctr": 2.0
     }
   },
   "analysis": {
@@ -217,9 +217,9 @@ Write `~/.meta-ads-intel/config.json`:
 
 Only include objectives detected in the account. Per-objective target keys:
 - OUTCOME_SALES: `cpa`, `roas`
-- OUTCOME_TRAFFIC: `cpc`, `target_ctr`
+- OUTCOME_TRAFFIC: `cpc`, `ctr`
 - OUTCOME_AWARENESS: `cpm`, `max_frequency`
-- OUTCOME_ENGAGEMENT: `cpe`, `target_engagement_rate`
+- OUTCOME_ENGAGEMENT: `cpe`, `engagement_rate`
 - OUTCOME_LEADS: `cpl`
 - OUTCOME_APP_PROMOTION: `cpi`
 

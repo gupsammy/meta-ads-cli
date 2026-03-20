@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Compute per-objective performance defaults from campaign-level insights.
 # Groups campaigns by normalized objective and computes KPIs for each.
@@ -7,6 +7,8 @@ set -e
 # Usage: compute-defaults.sh <account_id> [campaigns-meta.json]
 # Requires: meta-ads CLI, jq
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OBJ_MAP="$SCRIPT_DIR/../references/objective-map.json"
 ACCOUNT_ID="${1:?Usage: compute-defaults.sh <account_id> [campaigns-meta.json]}"
 CAMPAIGNS_META_FILE="${2:-}"
 CLI="${META_ADS_CLI:-meta-ads}"
@@ -23,17 +25,11 @@ else
   CAMPAIGNS_META=$("$CLI" campaigns list --account-id "$ACCOUNT_ID" --limit 200 -o json)
 fi
 
-# Build objective lookup: campaign_id -> normalized objective
-OBJ_LOOKUP=$(echo "$CAMPAIGNS_META" | jq 'INDEX((.data // .)[]; .id) | map_values(
-  (.objective // "UNKNOWN") |
-  if . == "LINK_CLICKS" then "OUTCOME_TRAFFIC"
-  elif . == "CONVERSIONS" or . == "PRODUCT_CATALOG_SALES" or . == "OFFER_CLAIMS" then "OUTCOME_SALES"
-  elif . == "BRAND_AWARENESS" or . == "REACH" or . == "LOCAL_AWARENESS" or . == "STORE_VISITS" or . == "VIDEO_VIEWS" then "OUTCOME_AWARENESS"
-  elif . == "POST_ENGAGEMENT" or . == "PAGE_LIKES" or . == "EVENT_RESPONSES" or . == "MESSAGES" then "OUTCOME_ENGAGEMENT"
-  elif . == "LEAD_GENERATION" then "OUTCOME_LEADS"
-  elif . == "APP_INSTALLS" then "OUTCOME_APP_PROMOTION"
-  else . end
-)')
+# Build objective lookup: campaign_id -> normalized objective (via objective-map.json)
+OBJ_LOOKUP=$(echo "$CAMPAIGNS_META" | jq --slurpfile omap "$OBJ_MAP" '
+  INDEX((.data // .)[]; .id) | map_values(
+    (.objective // "UNKNOWN") as $v | $omap[0][$v] // $v
+  )')
 
 # Pull campaign-level insights for last 14 days
 RAW=$("$CLI" insights get \
@@ -44,11 +40,13 @@ RAW=$("$CLI" insights get \
 
 # Join with objectives, group by objective, compute per-objective KPIs
 echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" '
-  # Join each campaign row with its normalized objective
+  # Reusable defs (see summarize-data.sh for canonical definitions)
+  def attr_guard: (. // []) as $raw | ($raw | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw else . end;
+  def omni_first($types): [.[] | select(.action_type as $t | $types | index($t) != null)] | sort_by(.action_type as $t | $types | index($t)) | .[0].value // "0" | tonumber;
   [(.data // .)[] |
     ((.campaign_id // "") | tostring) as $cid |
-    ((.actions // []) as $raw_a | ($raw_a | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw_a else . end) as $actions |
-    ((.action_values // []) as $raw_av | ($raw_av | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw_av else . end) as $action_vals |
+    (.actions | attr_guard) as $actions |
+    (.action_values | attr_guard) as $action_vals |
     {
       campaign_id: $cid,
       objective: ($obj[$cid] // "UNKNOWN"),
@@ -60,14 +58,14 @@ echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" '
       cpm: ((.cpm // "0") | tonumber),
       reach: ((.reach // "0") | tonumber),
       frequency: ((.frequency // "0") | tonumber),
-      purchases: ($actions | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      revenue: ($action_vals | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      roas: ((.purchase_roas // []) | map(select(has("action_attribution_window") | not)) | if length == 0 then ((.purchase_roas // [])) else . end | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      link_clicks: ($actions | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
-      landing_page_views: ($actions | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber),
-      post_engagement: ($actions | map(select(.action_type == "post_engagement")) | .[0].value // "0" | tonumber),
-      lead: ($actions | (map(select(.action_type == "onsite_conversion.lead_grouped")) + map(select(.action_type == "lead"))) | .[0].value // "0" | tonumber),
-      app_install: ($actions | (map(select(.action_type == "omni_app_install")) + map(select(.action_type == "mobile_app_install")) + map(select(.action_type == "app_install"))) | .[0].value // "0" | tonumber)
+      purchases: ($actions | omni_first(["omni_purchase", "purchase"])),
+      revenue: ($action_vals | omni_first(["omni_purchase", "purchase"])),
+      roas: (.purchase_roas | attr_guard | omni_first(["omni_purchase", "purchase"])),
+      link_clicks: ($actions | omni_first(["link_click"])),
+      landing_page_views: ($actions | omni_first(["landing_page_view"])),
+      post_engagement: ($actions | omni_first(["post_engagement"])),
+      lead: ($actions | omni_first(["onsite_conversion.lead_grouped", "lead"])),
+      app_install: ($actions | omni_first(["omni_app_install", "mobile_app_install", "app_install"]))
     }
   ] |
 

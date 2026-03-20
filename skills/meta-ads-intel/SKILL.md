@@ -22,7 +22,7 @@ Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: las
 
 ## Data Architecture
 
-Scripts handle all data pulling, summarization, and computation. Read only the 6 pre-computed analysis files — never raw data. All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
+Scripts handle all data pulling, summarization, and computation. The pipeline produces 6 output files; the agent reads 5 directly (creative-media.json is consumed only by analyze-creatives.sh for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
 
 ```
 ~/.meta-ads-intel/
@@ -191,5 +191,5 @@ Return concise summary: account health headline, top 3 actions, report paths.
 - NEVER read files in `_raw/` directories. These contain verbose API responses with 40+ duplicate action types per row.
 - NEVER read `*-summary.json` files directly. These are intermediate files consumed by `prepare-analysis.sh`.
 - NEVER read `creative-media.json` — it's input for `analyze-creatives.sh` only.
-- Only read the 5 analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
+- Only read the 5 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`. The 6th file (`creative-media.json`) is consumed only by `analyze-creatives.sh`. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
 - All monetary values in analysis files are in the account's currency (not minor units — scripts already convert).

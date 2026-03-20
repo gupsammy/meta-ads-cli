@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+umask 077
 
 # Transform summary files + config into 6 agent-ready analysis files.
 # All computation is pure jq — deterministic, fast, zero token cost.
@@ -29,6 +30,23 @@ if ! command -v jq &>/dev/null; then
   exit 1
 fi
 
+# Validate that a JSON file exists, is non-empty, and is valid JSON
+validate_json() {
+  local file="$1" label="$2"
+  if [[ ! -f "$file" ]]; then
+    echo "Error: $label not found: $file" >&2
+    return 1
+  fi
+  if [[ ! -s "$file" ]]; then
+    echo "Error: $label is empty: $file" >&2
+    return 1
+  fi
+  if ! jq empty "$file" 2>/dev/null; then
+    echo "Error: $label is not valid JSON: $file" >&2
+    return 1
+  fi
+}
+
 # Require v2 config (per-objective targets from onboarding v2)
 CONFIG_VER=$(jq -r '.config_version // 1' "$CONFIG")
 if [[ "$CONFIG_VER" -lt 2 ]]; then
@@ -36,15 +54,26 @@ if [[ "$CONFIG_VER" -lt 2 ]]; then
   exit 1
 fi
 
-# Load shared config values
-TOP_N=$(jq -r '.analysis.top_n // 15' "$CONFIG")
-BOTTOM_N=$(jq -r '.analysis.bottom_n // 10' "$CONFIG")
-ZERO_N=$(jq -r '.analysis.zero_conversion_n // .analysis.zero_purchase_n // 10' "$CONFIG")
-ACCOUNT_NAME=$(jq -r '.account_name // "Unknown"' "$CONFIG")
-CURRENCY=$(jq -r '.currency // "USD"' "$CONFIG")
-PRIMARY_OBJ=$(jq -r '.primary_objective // "OUTCOME_SALES"' "$CONFIG")
+# Load shared config values (single jq call)
+read -r TOP_N BOTTOM_N ZERO_N ACCOUNT_NAME CURRENCY PRIMARY_OBJ < <(
+  jq -r '[
+    (.analysis.top_n // 15),
+    (.analysis.bottom_n // 10),
+    (.analysis.zero_conversion_n // .analysis.zero_purchase_n // 10),
+    (.account_name // "Unknown"),
+    (.currency // "USD"),
+    (.primary_objective // "OUTCOME_SALES")
+  ] | @tsv' "$CONFIG"
+)
 
 echo "Preparing analysis files for $(basename "$RUN_DIR")..."
+
+# Validate input summary files before processing
+for f in campaigns-summary.json adsets-summary.json ads-summary.json; do
+  if [[ -f "$RUN_DIR/$f" ]]; then
+    validate_json "$RUN_DIR/$f" "$f" || exit 1
+  fi
+done
 
 # ─── 1. account-health.json ───────────────────────────────────────────────────
 if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
@@ -107,7 +136,7 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             (map(.link_clicks) | add // 0) as $lc |
             (map(.landing_page_views) | add // 0) as $lpv |
             ($obj_targets.cpc // 0) as $t_cpc |
-            ($obj_targets.target_ctr // 0) as $t_ctr |
+            ($obj_targets.ctr // $obj_targets.target_ctr // 0) as $t_ctr |
             {
               link_clicks: $lc,
               landing_page_views: $lpv,
@@ -138,7 +167,7 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             (map(.post_engagement) | add // 0) as $pe |
             (map(.page_engagement) | add // 0) as $pge |
             ($obj_targets.cpe // 0) as $t_cpe |
-            ($obj_targets.target_engagement_rate // 0) as $t_er |
+            ($obj_targets.engagement_rate // $obj_targets.target_engagement_rate // 0) as $t_er |
             {
               post_engagement: $pe,
               page_engagement: $pge,
@@ -231,7 +260,7 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
 
             elif $obj == "OUTCOME_TRAFFIC" then (
               ($obj_targets.cpc // 0) as $t_cpc |
-              ($obj_targets.target_ctr // 0) as $t_ctr |
+              ($obj_targets.ctr // $obj_targets.target_ctr // 0) as $t_ctr |
               if .link_clicks == 0 then
                 {action: "pause", reason: ("zero link clicks with spend " + (.spend | tostring))}
               elif $t_cpc > 0 and $t_ctr > 0 then (
@@ -621,127 +650,94 @@ else
   echo "  trends.json (no recent data)"
 fi
 
-# ─── 5. creative-analysis.json ────────────────────────────────────────────────
+# ─── 5. creative-analysis.json + 6. creative-media.json ──────────────────────
+# Both use obj_meta for ranking. creative-analysis outputs agent-facing analysis;
+# creative-media outputs ad_id + URLs for analyze-creatives.sh.
 if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
-  jq --slurpfile cfg "$CONFIG" --argjson top_n "$TOP_N" \
-     --argjson bottom_n "$BOTTOM_N" --argjson zero_n "$ZERO_N" '
+  # Ensure creatives file exists for URL lookup (empty array fallback)
+  CREATIVES_FILE="$RUN_DIR/_raw/creatives.json"
+  if [[ ! -f "$CREATIVES_FILE" ]]; then
+    echo '[]' > "$RUN_DIR/_creatives_empty.json"
+    CREATIVES_FILE="$RUN_DIR/_creatives_empty.json"
+  fi
 
-    ($cfg[0].targets.global.min_spend // 0) as $min_spend |
-    ([.[].objective] | unique | sort) as $objectives |
-
-    {objectives_present: $objectives} + (
-      [$objectives[] as $obj |
-        [.[] | select(.objective == $obj and .spend >= $min_spend)] |
-
-        # Determine primary conversion and sort metric per objective
-        (if $obj == "OUTCOME_SALES" then
-          {conv_field: "purchases", sort_field: "roas", sort_dir: "desc", zero_label: "zero_purchase"}
-        elif $obj == "OUTCOME_TRAFFIC" then
-          {conv_field: "link_clicks", sort_field: "link_click_ctr", sort_dir: "desc", zero_label: "zero_clicks"}
-        elif $obj == "OUTCOME_AWARENESS" then
-          {conv_field: "impressions", sort_field: "cpm", sort_dir: "asc", zero_label: "zero_impressions"}
-        elif $obj == "OUTCOME_ENGAGEMENT" then
-          {conv_field: "post_engagement", sort_field: "cpe", sort_dir: "asc", zero_label: "zero_engagement"}
-        elif $obj == "OUTCOME_LEADS" then
-          {conv_field: "lead", sort_field: "cpl", sort_dir: "asc", zero_label: "zero_leads"}
-        elif $obj == "OUTCOME_APP_PROMOTION" then
-          {conv_field: "app_install", sort_field: "cpi", sort_dir: "asc", zero_label: "zero_installs"}
-        else
-          {conv_field: "purchases", sort_field: "spend", sort_dir: "desc", zero_label: "zero_conversion"}
-        end) as $meta |
-
-        # Split into with/without conversions
-        (map(select(.[$meta.conv_field] > 0)) |
-          if $meta.sort_dir == "desc" then sort_by(-.[$meta.sort_field])
-          else sort_by(.[$meta.sort_field]) end
-        ) as $with_conv |
-        (map(select(.[$meta.conv_field] == 0)) | sort_by(-.spend)) as $zero_conv |
-
-        # Proportional allocation: cap to available ads
-        ($with_conv | length) as $total |
-        ([$top_n, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
-        ([$bottom_n, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
-
-        {($obj): {
-          overview: {
-            total_ads: length,
-            with_conversions: ($with_conv | length),
-            zero_conversion_count: ($zero_conv | length),
-            zero_conversion_total_spend: ($zero_conv | map(.spend) | add // 0)
-          },
-          winners: [$with_conv[:$win_n][] | {
-            ad_name, campaign_name, creative_body, creative_title, spend,
-            roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
-            cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
-            cpc: (.cpc | . * 100 | round / 100),
-            ctr: (.ctr | . * 100 | round / 100),
-            cpe: (if .cpe then (.cpe | . * 100 | round / 100) else null end),
-            cpl: (if .cpl then (.cpl | . * 100 | round / 100) else null end),
-            cpi: (if .cpi then (.cpi | . * 100 | round / 100) else null end),
-            purchases, post_engagement, lead, app_install
-          }],
-          losers: [if $lose_n > 0 then $with_conv[-$lose_n:][] else empty end | {
-            ad_name, campaign_name, creative_body, creative_title, spend,
-            roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
-            cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
-            cpc: (.cpc | . * 100 | round / 100),
-            ctr: (.ctr | . * 100 | round / 100),
-            cpe: (if .cpe then (.cpe | . * 100 | round / 100) else null end),
-            cpl: (if .cpl then (.cpl | . * 100 | round / 100) else null end),
-            cpi: (if .cpi then (.cpi | . * 100 | round / 100) else null end),
-            purchases, post_engagement, lead, app_install
-          }],
-          zero_conversion: [$zero_conv[:$zero_n][] | {
-            ad_name, campaign_name, creative_body, creative_title, spend
-          }]
-        }}
-      ] | add // {}
-    )' "$RUN_DIR/ads-summary.json" > "$RUN_DIR/creative-analysis.json"
-  echo "  creative-analysis.json"
-fi
-
-# ─── 6. creative-media.json ──────────────────────────────────────────────────
-# Built from ads-summary.json (has ad_id) + _raw/creatives.json (has URLs).
-# analyze-creatives.sh needs ad_id to look up creative_id from creatives-master.json.
-if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; then
   jq --slurpfile cfg "$CONFIG" --argjson top_n "$TOP_N" \
      --argjson bottom_n "$BOTTOM_N" --argjson zero_n "$ZERO_N" \
-     --slurpfile creatives "$RUN_DIR/_raw/creatives.json" '
+     --slurpfile creatives "$CREATIVES_FILE" '
 
-    ($cfg[0].targets.global.min_spend // 0) as $min_spend |
+    # Data-driven objective metadata — single source of truth for ranking
+    def obj_meta($obj):
+      if $obj == "OUTCOME_SALES" then {conv: "purchases", sort: "roas", dir: "desc", zero_label: "zero_purchase"}
+      elif $obj == "OUTCOME_TRAFFIC" then {conv: "link_clicks", sort: "link_click_ctr", dir: "desc", zero_label: "zero_clicks"}
+      elif $obj == "OUTCOME_AWARENESS" then {conv: "impressions", sort: "cpm", dir: "asc", zero_label: "zero_impressions"}
+      elif $obj == "OUTCOME_ENGAGEMENT" then {conv: "post_engagement", sort: "cpe", dir: "asc", zero_label: "zero_engagement"}
+      elif $obj == "OUTCOME_LEADS" then {conv: "lead", sort: "cpl", dir: "asc", zero_label: "zero_leads"}
+      elif $obj == "OUTCOME_APP_PROMOTION" then {conv: "app_install", sort: "cpi", dir: "asc", zero_label: "zero_installs"}
+      else {conv: "purchases", sort: "spend", dir: "desc", zero_label: "zero_conversion"} end;
 
-    # Build URL lookup from raw creatives: ad_id -> {image_url, thumbnail_url}
-    ($creatives[0] | (.data // .) | INDEX(.id) | map_values({
-      creative_image_url: (.creative_image_url // ""),
-      creative_thumbnail_url: (.creative_thumbnail_url // "")
-    })) as $url_lookup |
-
-    ([.[].objective] | unique | sort) as $objectives |
-
-    [$objectives[] as $obj |
-      [.[] | select(.objective == $obj and .spend >= $min_spend)] |
-
-      # Same sort logic as creative-analysis.json
-      (if $obj == "OUTCOME_SALES" then {conv: "purchases", sort: "roas", dir: "desc"}
-       elif $obj == "OUTCOME_TRAFFIC" then {conv: "link_clicks", sort: "link_click_ctr", dir: "desc"}
-       elif $obj == "OUTCOME_AWARENESS" then {conv: "impressions", sort: "cpm", dir: "asc"}
-       elif $obj == "OUTCOME_ENGAGEMENT" then {conv: "post_engagement", sort: "cpe", dir: "asc"}
-       elif $obj == "OUTCOME_LEADS" then {conv: "lead", sort: "cpl", dir: "asc"}
-       elif $obj == "OUTCOME_APP_PROMOTION" then {conv: "app_install", sort: "cpi", dir: "asc"}
-       else {conv: "purchases", sort: "spend", dir: "desc"} end) as $meta |
-
-      (map(select(.[$meta.conv] > 0)) |
-        if $meta.dir == "desc" then sort_by(-.[$meta.sort]) else sort_by(.[$meta.sort]) end
+    # Shared ranking computation
+    def rank_ads($obj; $top_n; $bottom_n; $zero_n):
+      obj_meta($obj) as $m |
+      (map(select(.[$m.conv] > 0)) |
+        if $m.dir == "desc" then sort_by(-(.[$m.sort] // 0)) else sort_by(.[$m.sort] // 0) end
       ) as $with_conv |
-      (map(select(.[$meta.conv] == 0)) | sort_by(-.spend)) as $zero_conv |
-
+      (map(select(.[$m.conv] == 0)) | sort_by(-.spend)) as $zero_conv |
       ($with_conv | length) as $total |
       ([$top_n, ([1, ($total / 2 | floor)] | max)] | min) as $win_n |
       ([$bottom_n, ($total - $win_n)] | min | if . < 0 then 0 else . end) as $lose_n |
+      {with_conv: $with_conv, zero_conv: $zero_conv, win_n: $win_n, lose_n: $lose_n, total_ads: length};
 
-      ($with_conv[:$win_n][]   | . + {rank: "winner"}),
-      (if $lose_n > 0 then $with_conv[-$lose_n:][] else empty end | . + {rank: "loser"}),
-      ($zero_conv[:$zero_n][]  | . + {rank: "zero_conversion"})
+    # Shared ad formatting (rounded KPIs)
+    def format_ad:
+      {
+        ad_name, campaign_name, creative_body, creative_title, spend,
+        roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
+        cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
+        cpc: (.cpc | . * 100 | round / 100),
+        ctr: (.ctr | . * 100 | round / 100),
+        cpe: (if .cpe then (.cpe | . * 100 | round / 100) else null end),
+        cpl: (if .cpl then (.cpl | . * 100 | round / 100) else null end),
+        cpi: (if .cpi then (.cpi | . * 100 | round / 100) else null end),
+        purchases, post_engagement, lead, app_install
+      };
+
+    ($cfg[0].targets.global.min_spend // 0) as $min_spend |
+    ([.[].objective] | unique | sort) as $objectives |
+
+    # URL lookup from raw creatives
+    ($creatives[0] | if type == "array" and length > 0 then
+      ((.data // .) | if type == "array" then INDEX(.[]; .id) | map_values({
+        creative_image_url: (.creative_image_url // ""),
+        creative_thumbnail_url: (.creative_thumbnail_url // "")
+      }) else {} end)
+    else {} end) as $url_lookup |
+
+    # creative-analysis.json content
+    ({objectives_present: $objectives} + (
+      [$objectives[] as $obj |
+        [.[] | select(.objective == $obj and .spend >= $min_spend)] |
+        rank_ads($obj; $top_n; $bottom_n; $zero_n) as $r |
+        {($obj): {
+          overview: {
+            total_ads: $r.total_ads,
+            with_conversions: ($r.with_conv | length),
+            zero_conversion_count: ($r.zero_conv | length),
+            zero_conversion_total_spend: ($r.zero_conv | map(.spend) | add // 0)
+          },
+          winners: [$r.with_conv[:$r.win_n][] | format_ad],
+          losers: [if $r.lose_n > 0 then $r.with_conv[-$r.lose_n:][] else empty end | format_ad],
+          zero_conversion: [$r.zero_conv[:$zero_n][] | {ad_name, campaign_name, creative_body, creative_title, spend}]
+        }}
+      ] | add // {}
+    )) as $analysis |
+
+    # creative-media.json content
+    ([$objectives[] as $obj |
+      [.[] | select(.objective == $obj and .spend >= $min_spend)] |
+      rank_ads($obj; $top_n; $bottom_n; $zero_n) as $r |
+      ($r.with_conv[:$r.win_n][] | . + {rank: "winner"}),
+      (if $r.lose_n > 0 then $r.with_conv[-$r.lose_n:][] else empty end | . + {rank: "loser"}),
+      ($r.zero_conv[:$zero_n][] | . + {rank: "zero_conversion"})
     ] | map(
       (.ad_id | tostring) as $aid |
       {
@@ -752,15 +748,35 @@ if [[ -f "$RUN_DIR/ads-summary.json" && -f "$RUN_DIR/_raw/creatives.json" ]]; th
         roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
         cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
         spend: .spend,
-        creative_image_url: ($url_lookup[$aid].creative_image_url // ""),
-        creative_thumbnail_url: ($url_lookup[$aid].creative_thumbnail_url // "")
+        creative_image_url: ($url_lookup[($aid)] // {}).creative_image_url // "",
+        creative_thumbnail_url: ($url_lookup[($aid)] // {}).creative_thumbnail_url // ""
       }
-    )
-  ' "$RUN_DIR/ads-summary.json" > "$RUN_DIR/creative-media.json"
+    )) as $media |
+
+    {analysis: $analysis, media: $media}
+  ' "$RUN_DIR/ads-summary.json" > "$RUN_DIR/_creative_combined.json"
+
+  # Split combined output into two files
+  jq '.analysis' "$RUN_DIR/_creative_combined.json" > "$RUN_DIR/creative-analysis.json"
+  jq '.media' "$RUN_DIR/_creative_combined.json" > "$RUN_DIR/creative-media.json"
+  rm -f "$RUN_DIR/_creative_combined.json" "$RUN_DIR/_creatives_empty.json"
+  echo "  creative-analysis.json"
   echo "  creative-media.json"
 else
   echo '[]' > "$RUN_DIR/creative-media.json"
   echo "  creative-media.json (no creative data available)"
 fi
 
-echo "Analysis preparation complete."
+# Report which output files were generated vs missing
+EXPECTED_FILES=(account-health.json budget-actions.json funnel.json trends.json creative-analysis.json creative-media.json)
+MISSING=()
+for f in "${EXPECTED_FILES[@]}"; do
+  if [[ ! -f "$RUN_DIR/$f" ]]; then
+    MISSING+=("$f")
+  fi
+done
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  echo "  WARNING: Missing output files: ${MISSING[*]}" >&2
+fi
+
+echo "Analysis preparation complete (${#EXPECTED_FILES[@]} expected, $((${#EXPECTED_FILES[@]} - ${#MISSING[@]})) generated)."

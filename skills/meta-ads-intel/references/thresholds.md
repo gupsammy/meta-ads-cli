@@ -18,7 +18,7 @@ Primary KPIs: CPA, ROAS. Targets from `targets.OUTCOME_SALES.{cpa, roas}`.
 - Pause: zero purchases despite spend above threshold
 
 ### OUTCOME_TRAFFIC
-Primary KPIs: CPC, CTR. Targets from `targets.OUTCOME_TRAFFIC.{cpc, target_ctr}`.
+Primary KPIs: CPC, CTR. Targets from `targets.OUTCOME_TRAFFIC.{cpc, ctr}`.
 - Scale: CPC < target x 0.8 AND CTR > target x 1.2
 - Maintain: within 20% of targets
 - Reduce: CPC > target x 1.2 OR CTR < target x 0.8
@@ -33,7 +33,7 @@ Primary KPIs: CPM. Targets from `targets.OUTCOME_AWARENESS.{cpm, max_frequency}`
 - Refresh threshold: uses awareness-specific max_frequency (typically lower, e.g., 3.0)
 
 ### OUTCOME_ENGAGEMENT
-Primary KPIs: CPE. Targets from `targets.OUTCOME_ENGAGEMENT.{cpe, target_engagement_rate}`.
+Primary KPIs: CPE. Targets from `targets.OUTCOME_ENGAGEMENT.{cpe, engagement_rate}`.
 - Scale: CPE < target x 0.8
 - Maintain: within 20% of target CPE
 - Reduce: CPE > target x 1.2
@@ -55,13 +55,7 @@ Primary KPIs: CPI. Targets from `targets.OUTCOME_APP_PROMOTION.{cpi}`.
 
 ## Legacy Objective Normalization
 
-Scripts normalize legacy objectives to OUTCOME_* equivalents:
-- LINK_CLICKS -> OUTCOME_TRAFFIC
-- CONVERSIONS, PRODUCT_CATALOG_SALES, OFFER_CLAIMS -> OUTCOME_SALES
-- BRAND_AWARENESS, REACH, LOCAL_AWARENESS, STORE_VISITS -> OUTCOME_AWARENESS
-- POST_ENGAGEMENT, PAGE_LIKES, VIDEO_VIEWS, EVENT_RESPONSES, MESSAGES -> OUTCOME_ENGAGEMENT
-- LEAD_GENERATION -> OUTCOME_LEADS
-- APP_INSTALLS -> OUTCOME_APP_PROMOTION
+Scripts normalize legacy objectives to OUTCOME_* equivalents via `references/objective-map.json` (single source of truth). Key mappings: LINK_CLICKS -> OUTCOME_TRAFFIC, CONVERSIONS/PRODUCT_CATALOG_SALES -> OUTCOME_SALES, BRAND_AWARENESS/REACH/VIDEO_VIEWS -> OUTCOME_AWARENESS, POST_ENGAGEMENT/PAGE_LIKES/MESSAGES -> OUTCOME_ENGAGEMENT, LEAD_GENERATION -> OUTCOME_LEADS, APP_INSTALLS -> OUTCOME_APP_PROMOTION.
 
 ## Interpretation Notes
 

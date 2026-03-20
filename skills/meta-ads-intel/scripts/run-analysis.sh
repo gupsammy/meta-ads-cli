@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Single entry point for the full Meta Ads analysis pipeline.
 # Chains: pull-data.sh → analyze-creatives.sh (if ffmpeg available).
