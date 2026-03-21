@@ -253,7 +253,7 @@ fi
 
 # Write pull warnings for pipeline-status.json
 if [[ ${#PULL_WARNINGS[@]} -gt 0 ]]; then
-  printf '%s\n' "${PULL_WARNINGS[@]}" | jq -R '[inputs]' > "$RUN_DIR/_pull-warnings.json"
+  printf '%s\n' "${PULL_WARNINGS[@]}" | jq -Rn '[inputs]' > "$RUN_DIR/_pull-warnings.json"
 fi
 
 # Run prepare-analysis.sh → 6 agent-ready files + pipeline-status.json

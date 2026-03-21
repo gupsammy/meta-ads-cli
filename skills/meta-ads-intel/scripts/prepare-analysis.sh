@@ -582,9 +582,11 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
     ($recent[0] | if length > 0 then .[0].date_start else null end) as $recent_start |
     ($recent[0] | if length > 0 then .[0].date_stop else null end) as $recent_stop |
 
-    # Guard: if period start == recent start, windows are identical — skip
+    # Guard: skip trends when period is too short for meaningful prior window
     if $period_start == $recent_start then
       {available: false, reason: "period equals recent window"}
+    elif ($period_start == null or $recent_start == null or $period_start >= $recent_start) then
+      {available: false, reason: "period shorter than or equal to recent window"}
     else
 
     {
@@ -602,7 +604,6 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             spend: ([$full.spend - $r.spend, 0] | max),
             impressions: ([$full.impressions - $r.impressions, 0] | max),
             clicks: ([$full.clicks - $r.clicks, 0] | max),
-            reach: ([$full.reach - $r.reach, 0] | max),
             purchases: ([$full.purchases - $r.purchases, 0] | max),
             revenue: ([$full.revenue - $r.revenue, 0] | max),
             link_clicks: ([$full.link_clicks - $r.link_clicks, 0] | max),
@@ -622,7 +623,7 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             cpl: (if .lead > 0 then (.spend / .lead) else null end),
             cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
             cpv: (if .video_view > 0 then (.spend / .video_view) else null end),
-            frequency: (if .reach > 0 then (.impressions / .reach) else 0 end)
+            frequency: $full.frequency
           }) as $prior |
           {
             campaign_name: .campaign_name,
@@ -868,8 +869,8 @@ fi
 
 jq -n \
   --arg status "$STATUS" \
-  --argjson produced "$(printf '%s\n' "${PRODUCED[@]}" | jq -R '[inputs]')" \
-  --argjson skipped "$(printf '%s\n' "${SKIPPED[@]}" 2>/dev/null | jq -R '[inputs]' 2>/dev/null || echo '[]')" \
+  --argjson produced "$(printf '%s\n' "${PRODUCED[@]}" | jq -Rn '[inputs]')" \
+  --argjson skipped "$(printf '%s\n' "${SKIPPED[@]+"${SKIPPED[@]}"}" 2>/dev/null | jq -Rn '[inputs]' 2>/dev/null || echo '[]')" \
   --argjson warnings "$WARNINGS_JSON" \
   '{status: $status, files_produced: $produced, files_skipped: $skipped, warnings: $warnings}' \
   > "$RUN_DIR/pipeline-status.json"

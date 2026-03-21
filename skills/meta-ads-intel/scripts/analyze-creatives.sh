@@ -106,7 +106,7 @@ while IFS=$'\t' read -r RAW_AD_ID AD_NAME RANK; do
   fi
 
   # Fetch creative details from Meta API
-  CREATIVE_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url" -H "Authorization: Bearer $TOKEN")
+  CREATIVE_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url" -H "Authorization: Bearer $TOKEN") || true
 
   # Check for API errors
   API_ERROR=$(echo "$CREATIVE_JSON" | jq -r '.error.message // empty')
@@ -123,7 +123,7 @@ while IFS=$'\t' read -r RAW_AD_ID AD_NAME RANK; do
 
   if [[ -n "$VIDEO_ID" ]]; then
     # === VIDEO AD ===
-    VIDEO_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$VIDEO_ID?fields=source,length" -H "Authorization: Bearer $TOKEN")
+    VIDEO_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$VIDEO_ID?fields=source,length" -H "Authorization: Bearer $TOKEN") || true
 
     SOURCE_URL=$(echo "$VIDEO_JSON" | jq -r '.source // empty')
     DURATION=$(echo "$VIDEO_JSON" | jq -r '.length // 0')

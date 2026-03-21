@@ -104,6 +104,7 @@ echo "$JOINED" | jq '
       elif .objective == "OUTCOME_ENGAGEMENT" then (.post_engagement > 0)
       elif .objective == "OUTCOME_LEADS" then (.lead > 0)
       elif .objective == "OUTCOME_APP_PROMOTION" then (.app_install > 0)
+      elif .objective == "OUTCOME_AWARENESS" then (.reach > 0)
       else (.spend > 0) end
     ),
     sort_metric: (
@@ -112,6 +113,7 @@ echo "$JOINED" | jq '
       elif .objective == "OUTCOME_ENGAGEMENT" then (if .cpe != null and .cpe > 0 then (1 / .cpe) else 0 end)
       elif .objective == "OUTCOME_LEADS" then (if .cpl != null and .cpl > 0 then (1 / .cpl) else 0 end)
       elif .objective == "OUTCOME_APP_PROMOTION" then (if .cpi != null and .cpi > 0 then (1 / .cpi) else 0 end)
+      elif .objective == "OUTCOME_AWARENESS" then (if .cpm != null and .cpm > 0 then (1 / .cpm) else 0 end)
       else .spend end
     )
   }) |
