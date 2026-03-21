@@ -151,16 +151,23 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
             }
 
           elif $obj == "OUTCOME_AWARENESS" then
+            (map(.video_view) | add // 0) as $vv |
             ($obj_targets.cpm // 0) as $t_cpm |
+            ($obj_targets.cpv // 0) as $t_cpv |
             ($obj_targets.max_frequency // ($targets.global.max_frequency // 5.0)) as $t_freq |
             {
               cpm: (if $imp > 0 then ($spend / $imp * 1000 | . * 100 | round / 100) else null end),
               avg_frequency: (if $rch > 0 then ($imp / $rch | . * 100 | round / 100) else null end),
               reach_rate: (if $imp > 0 then ($rch / $imp * 100 | . * 100 | round / 100) else null end),
+              video_views: $vv,
+              cpv: (if $vv > 0 then ($spend / $vv | . * 100 | round / 100) else null end),
               target_cpm: $t_cpm,
+              target_cpv: $t_cpv,
               target_max_frequency: $t_freq,
               cpm_vs_target: (if $imp > 0 and $t_cpm > 0 then
-                ((($spend / $imp * 1000) - $t_cpm) / $t_cpm * 100 | round) else null end)
+                ((($spend / $imp * 1000) - $t_cpm) / $t_cpm * 100 | round) else null end),
+              cpv_vs_target: (if $vv > 0 and $t_cpv > 0 then
+                ((($spend / $vv) - $t_cpv) / $t_cpv * 100 | round) else null end)
             }
 
           elif $obj == "OUTCOME_ENGAGEMENT" then
@@ -286,11 +293,17 @@ if [[ -f "$RUN_DIR/_summaries/adsets-summary.json" ]]; then
 
             elif $obj == "OUTCOME_AWARENESS" then (
               ($obj_targets.cpm // 0) as $t_cpm |
+              ($obj_targets.cpv // 0) as $t_cpv |
+              (if .video_view > 0 then (.spend / .video_view) else null end) as $cpv |
               if .impressions == 0 then
                 {action: "pause", reason: ("zero impressions with spend " + (.spend | tostring))}
               elif $t_cpm > 0 then (
                 if .cpm < ($t_cpm * 0.8) then {action: "scale", reason: ("CPM " + (.cpm | . * 100 | round / 100 | tostring) + " below target")}
                 elif .cpm > ($t_cpm * 1.2) then {action: "reduce", reason: ("CPM " + (.cpm | . * 100 | round / 100 | tostring) + " above threshold")}
+                else {action: "maintain", reason: "within target range"} end)
+              elif $t_cpv > 0 and $cpv != null then (
+                if $cpv < ($t_cpv * 0.8) then {action: "scale", reason: ("CPV " + ($cpv | . * 100 | round / 100 | tostring) + " below target")}
+                elif $cpv > ($t_cpv * 1.2) then {action: "reduce", reason: ("CPV " + ($cpv | . * 100 | round / 100 | tostring) + " above threshold")}
                 else {action: "maintain", reason: "within target range"} end)
               else {action: "maintain", reason: "no targets set"} end
             )
@@ -339,7 +352,9 @@ if [[ -f "$RUN_DIR/_summaries/adsets-summary.json" ]]; then
           elif $obj == "OUTCOME_TRAFFIC" then
             {cpc: (if .link_click_cpc then (.link_click_cpc | . * 100 | round / 100) else null end), ctr: (.link_click_ctr | . * 100 | round / 100), link_clicks}
           elif $obj == "OUTCOME_AWARENESS" then
-            {cpm: (.cpm | . * 100 | round / 100), reach}
+            {cpm: (.cpm | . * 100 | round / 100), reach,
+             video_views: .video_view,
+             cpv: (if .video_view > 0 then (.spend / .video_view | . * 100 | round / 100) else null end)}
           elif $obj == "OUTCOME_ENGAGEMENT" then
             {cpe: (if .cpe then (.cpe | . * 100 | round / 100) else null end), post_engagement}
           elif $obj == "OUTCOME_LEADS" then
@@ -452,12 +467,15 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
             (map(.impressions) | add // 0) as $imp |
             (map(.reach) | add // 0) as $rch |
             (map(.spend) | add // 0) as $spend |
+            (map(.video_view) | add // 0) as $vv |
             {
               type: "reach_efficiency",
               total_reach: $rch,
               total_impressions: $imp,
               total_spend: $spend,
+              video_views: $vv,
               cpm: (if $imp > 0 then ($spend / $imp * 1000 | . * 100 | round / 100) else null end),
+              cost_per_view: (if $vv > 0 then ($spend / $vv | . * 100 | round / 100) else null end),
               avg_frequency: (if $rch > 0 then ($imp / $rch | . * 100 | round / 100) else null end),
               reach_rate: (if $imp > 0 then ($rch / $imp * 100 | . * 100 | round / 100) else null end),
               note: "No conversion funnel for awareness \u2014 showing reach efficiency metrics"
@@ -590,7 +608,8 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             link_clicks: ([$full.link_clicks - $r.link_clicks, 0] | max),
             post_engagement: ([$full.post_engagement - $r.post_engagement, 0] | max),
             lead: ([$full.lead - $r.lead, 0] | max),
-            app_install: ([$full.app_install - $r.app_install, 0] | max)
+            app_install: ([$full.app_install - $r.app_install, 0] | max),
+            video_view: ([$full.video_view - $r.video_view, 0] | max)
           } |
           # Recompute derived rates from prior-window bases
           . + {
@@ -602,6 +621,7 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
             cpl: (if .lead > 0 then (.spend / .lead) else null end),
             cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+            cpv: (if .video_view > 0 then (.spend / .video_view) else null end),
             frequency: (if .reach > 0 then (.impressions / .reach) else 0 end)
           }) as $prior |
           {
@@ -639,7 +659,11 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             prior_cpm: ($prior.cpm | . * 100 | round / 100),
             recent_cpm: ($r.cpm | . * 100 | round / 100),
             cpm_delta_pct: (if $prior.cpm > 0 and $r.cpm != null then
-              (($r.cpm - $prior.cpm) / $prior.cpm * 100 | round) else null end)
+              (($r.cpm - $prior.cpm) / $prior.cpm * 100 | round) else null end),
+            prior_cpv: (if $prior.cpv then ($prior.cpv | . * 100 | round / 100) else null end),
+            recent_cpv: (if $r.video_view > 0 then ($r.spend / $r.video_view | . * 100 | round / 100) else null end),
+            cpv_delta_pct: (if $prior.cpv != null and $prior.cpv > 0 and $r.video_view > 0 then
+              ((($r.spend / $r.video_view) - $prior.cpv) / $prior.cpv * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_ENGAGEMENT" then {
             prior_cpe: (if $prior.cpe then ($prior.cpe | . * 100 | round / 100) else null end),
@@ -670,7 +694,8 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
               (if .cpc_delta_pct != null and .cpc_delta_pct > 15 then "cpc_rising" else null end),
               (if .ctr_delta_pct != null and .ctr_delta_pct < -15 then "ctr_declining" else null end)
             elif .objective == "OUTCOME_AWARENESS" then
-              (if .cpm_delta_pct != null and .cpm_delta_pct > 15 then "cpm_rising" else null end)
+              (if .cpm_delta_pct != null and .cpm_delta_pct > 15 then "cpm_rising" else null end),
+              (if .cpv_delta_pct != null and .cpv_delta_pct > 15 then "cpv_rising" else null end)
             elif .objective == "OUTCOME_ENGAGEMENT" then
               (if .cpe_delta_pct != null and .cpe_delta_pct > 15 then "cpe_rising" else null end)
             elif .objective == "OUTCOME_LEADS" then
@@ -749,11 +774,11 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
     ([.[].objective] | unique | sort) as $objectives |
 
     # URL lookup from raw creatives
-    ($creatives[0] | (.data // .) | if type == "array" and length > 0 then
+    ($creatives[0] | (.data? // .) | if type == "array" and length > 0 then
       (INDEX(.[]; .id) | map_values({
         creative_image_url: (.creative_image_url // ""),
         creative_thumbnail_url: (.creative_thumbnail_url // "")
-      }) else {} end)
+      }))
     else {} end) as $url_lookup |
 
     # creative-analysis.json content
@@ -782,6 +807,9 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
       ($r.with_conv[:$r.win_n][] | . + {rank: "winner"}),
       (if $r.lose_n > 0 then $r.with_conv[-$r.lose_n:][] else empty end | . + {rank: "loser"}),
       ($r.zero_conv[:$zero_n][] | . + {rank: "zero_conversion"})
+    ] | [.[] |
+      obj_meta(.objective) as $m |
+      . + {_sort_key: $m.sort}
     ] | map(
       (.ad_id | tostring) as $aid |
       {
@@ -789,11 +817,11 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
         ad_name: .ad_name,
         objective: .objective,
         rank: .rank,
-        roas: (if .roas then (.roas | . * 100 | round / 100) else 0 end),
-        cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
+        primary_metric_name: ._sort_key,
+        primary_metric_value: (.[._sort_key] // 0 | . * 100 | round / 100),
         spend: .spend,
-        creative_image_url: ($url_lookup[($aid)] // {}).creative_image_url // "",
-        creative_thumbnail_url: ($url_lookup[($aid)] // {}).creative_thumbnail_url // ""
+        creative_image_url: (($url_lookup[($aid)] // {}).creative_image_url // ""),
+        creative_thumbnail_url: (($url_lookup[($aid)] // {}).creative_thumbnail_url // "")
       }
     )) as $media |
 

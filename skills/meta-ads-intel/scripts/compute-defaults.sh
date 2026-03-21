@@ -64,7 +64,8 @@ echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" "$JQ_DEFS"'
       landing_page_views: ($actions | omni_first(["landing_page_view"])),
       post_engagement: ($actions | omni_first(["post_engagement"])),
       lead: ($actions | omni_first(["onsite_conversion.lead_grouped", "lead"])),
-      app_install: ($actions | omni_first(["omni_app_install", "mobile_app_install", "app_install"]))
+      app_install: ($actions | omni_first(["omni_app_install", "mobile_app_install", "app_install"])),
+      video_view: ($actions | omni_first(["video_view"]))
     }
   ] |
 
@@ -100,10 +101,13 @@ echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" "$JQ_DEFS"'
     elif $obj == "OUTCOME_AWARENESS" then
       (map(.impressions) | add // 0) as $imp |
       (map(.reach) | add // 0) as $rch |
+      (map(.video_view) | add // 0) as $vv |
       {
         impressions: $imp,
         reach: $rch,
+        video_views: $vv,
         current_cpm: (if $imp > 0 then ($spend / $imp * 1000 | . * 100 | round / 100) else null end),
+        current_cpv: (if $vv > 0 then ($spend / $vv | . * 100 | round / 100) else null end),
         avg_frequency: (if $rch > 0 then ($imp / $rch | . * 100 | round / 100) else null end)
       }
     elif $obj == "OUTCOME_ENGAGEMENT" then

@@ -12,7 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/jq-defs.sh
 . "$SCRIPT_DIR/lib/jq-defs.sh"
 OBJ_MAP="$SCRIPT_DIR/../references/objective-map.json"
-ACCOUNT_ID="${1:?Usage: onboard-scan.sh <account_id>}"
+ACCOUNT_ID="${1:?Usage: onboard-scan.sh <account_id> [campaigns-meta.json]}"
+CAMPAIGNS_FILE="${2:-}"
 CLI="${META_ADS_CLI:-meta-ads}"
 
 if ! command -v jq &>/dev/null; then
@@ -42,8 +43,12 @@ CREATIVE_LOOKUP=$(echo "$ADS" | jq 'INDEX((.data // .)[] ; .id) | map_values({
   creative_thumbnail_url: (.creative_thumbnail_url // "")
 })' 2>/dev/null || echo '{}')
 
-# 4. Build objective lookup from campaigns-meta (if available, else pull)
-CAMPAIGNS_META=$("$CLI" campaigns list --account-id "$ACCOUNT_ID" --limit 200 -o json 2>/dev/null || echo '{"data":[]}')
+# 4. Build objective lookup from campaigns-meta (use pre-fetched file or pull)
+if [[ -n "$CAMPAIGNS_FILE" && -f "$CAMPAIGNS_FILE" ]]; then
+  CAMPAIGNS_META=$(cat "$CAMPAIGNS_FILE")
+else
+  CAMPAIGNS_META=$("$CLI" campaigns list --account-id "$ACCOUNT_ID" --limit 200 -o json 2>/dev/null || echo '{"data":[]}')
+fi
 OBJ_LOOKUP=$(echo "$CAMPAIGNS_META" | jq --slurpfile omap "$OBJ_MAP" '
   INDEX((.data // .)[]; .id) | map_values(
     (.objective // "UNKNOWN") as $v | $omap[0][$v] // $v

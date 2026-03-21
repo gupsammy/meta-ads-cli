@@ -25,12 +25,13 @@ Primary KPIs: CPC, CTR. Targets from `targets.OUTCOME_TRAFFIC.{cpc, ctr}`.
 - Pause: zero link clicks despite spend
 
 ### OUTCOME_AWARENESS
-Primary KPIs: CPM. Targets from `targets.OUTCOME_AWARENESS.{cpm, max_frequency}`.
-- Scale: CPM < target x 0.8
-- Maintain: within 20% of target CPM
-- Reduce: CPM > target x 1.2
+Primary KPIs: CPM, CPV (for video campaigns). Targets from `targets.OUTCOME_AWARENESS.{cpm, cpv, max_frequency}`.
+- Scale: CPM < target x 0.8 (or CPV < target x 0.8 for video campaigns when no CPM target)
+- Maintain: within 20% of target CPM or CPV
+- Reduce: CPM > target x 1.2 (or CPV > target x 1.2 for video campaigns when no CPM target)
 - Pause: zero impressions (rare)
 - Refresh threshold: uses awareness-specific max_frequency (typically lower, e.g., 3.0)
+- CPV (cost per view): evaluated as secondary KPI when CPM target is not set but CPV target exists. VIDEO_VIEWS campaigns get credit for view efficiency via this path.
 
 ### OUTCOME_ENGAGEMENT
 Primary KPIs: CPE. Targets from `targets.OUTCOME_ENGAGEMENT.{cpe, engagement_rate}`.
