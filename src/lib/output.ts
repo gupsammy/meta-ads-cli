@@ -1,6 +1,7 @@
 import Table from 'cli-table3';
 import { stringify } from 'csv-stringify/sync';
 import { createInterface } from 'node:readline';
+import { HttpError } from './http.js';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
 
@@ -97,6 +98,15 @@ export function printError(
     if (hint) msg += `\nHint: ${hint}`;
     console.error(msg);
   }
+}
+
+export function handleCommandError(error: unknown, format: OutputFormat): never {
+  if (error instanceof HttpError) {
+    printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, format);
+  } else {
+    printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, format);
+  }
+  process.exit(EXIT_RUNTIME);
 }
 
 export async function confirmAction(message: string, force?: boolean): Promise<boolean> {

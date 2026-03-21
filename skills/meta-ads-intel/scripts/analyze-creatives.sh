@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+umask 077
 
 # Extract visual artifacts (frames + metadata) from top/bottom performing ad creatives.
 #
@@ -14,11 +15,14 @@ set -e
 # Usage: analyze-creatives.sh [input-file]
 #        Default input: auto-detected from latest run directory
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/http-helpers.sh"
+
 export DATA_DIR="${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}"
 export CREATIVES_DIR="$(dirname "${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}")/creatives"
 CREATIVES_MASTER="$DATA_DIR/creatives-master.json"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/meta-ads-cli/config.json"
-API_VERSION="v21.0"
+API_VERSION="${META_ADS_API_VERSION:-v21.0}"
 MAX_FRAMES=6
 
 # Check dependencies
@@ -30,17 +34,17 @@ for cmd in ffmpeg ffprobe curl jq python3; do
 done
 
 # Get access token
-if [[ -n "$META_ADS_ACCESS_TOKEN" ]]; then
+if [[ -n "${META_ADS_ACCESS_TOKEN:-}" ]]; then
   TOKEN="$META_ADS_ACCESS_TOKEN"
 elif [[ -f "$CONFIG_FILE" ]]; then
-  TOKEN=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['auth']['access_token'])")
+  TOKEN=$(jq -r '.auth.access_token' "$CONFIG_FILE")
 else
   echo "Error: No access token. Set META_ADS_ACCESS_TOKEN or run 'meta-ads auth login'." >&2
   exit 1
 fi
 
 # Input file — auto-detect from latest run dir if not specified
-if [[ -n "$1" ]]; then
+if [[ -n "${1:-}" ]]; then
   export INPUT_FILE="$1"
 else
   # Find latest run directory
@@ -64,34 +68,45 @@ if [[ ! -f "$CREATIVES_MASTER" ]]; then
   exit 1
 fi
 
-# Clean previous artifacts
-rm -rf "$CREATIVES_DIR"
-mkdir -p "$CREATIVES_DIR"
+# Atomic swap: write to temp dir, swap on success
+export CREATIVES_TMP="${CREATIVES_DIR}._tmp_$$"
+trap 'rm -rf "$CREATIVES_TMP"' EXIT
+rm -rf "$CREATIVES_TMP"
+mkdir -p "$CREATIVES_TMP"
 
+# Pre-extract all ad data in one jq pass (avoids N*3 jq spawns in the loop)
 TOTAL=$(jq length "$INPUT_FILE")
 echo "Extracting creative artifacts for $TOTAL ads..."
 
-for i in $(seq 0 $((TOTAL - 1))); do
-  AD_ID=$(jq -r ".[$i].ad_id // .[$i].ad_name" "$INPUT_FILE" | tr -cd '[:alnum:]_-' | cut -c1-64)
-  AD_NAME=$(jq -r ".[$i].ad_name" "$INPUT_FILE")
-  RANK=$(jq -r ".[$i].rank" "$INPUT_FILE")
+AD_TSV="$CREATIVES_TMP/_ads.tsv"
+jq -r '.[] | [(.ad_id // .ad_name | tostring), (.ad_name // ""), (.rank // "")] | @tsv' \
+  "$INPUT_FILE" > "$AD_TSV"
 
-  AD_DIR="$CREATIVES_DIR/$AD_ID"
+# Build creative_id lookup: ad_id -> creative_id (single jq pass instead of per-ad)
+CREATIVE_LOOKUP_FILE="$CREATIVES_TMP/_creative_ids.json"
+jq 'INDEX((.data // .)[]; .id) | map_values(.creative_id // "")' \
+  "$CREATIVES_MASTER" > "$CREATIVE_LOOKUP_FILE"
+
+LINE_NUM=0
+while IFS=$'\t' read -r RAW_AD_ID AD_NAME RANK; do
+  LINE_NUM=$((LINE_NUM + 1))
+  AD_ID=$(echo "$RAW_AD_ID" | tr -cd '[:alnum:]_-' | cut -c1-64)
+
+  AD_DIR="$CREATIVES_TMP/$AD_ID"
   mkdir -p "$AD_DIR"
 
-  echo "  [$((i+1))/$TOTAL] $AD_NAME ($RANK)"
+  echo "  [$LINE_NUM/$TOTAL] $AD_NAME ($RANK)"
 
-  # Look up creative_id from creatives-master.json
-  CREATIVE_ID=$(jq -r --arg aid "$AD_ID" '(.data // .)[] | select(.id == $aid) | .creative_id // empty' "$CREATIVES_MASTER")
+  # Look up creative_id from pre-built lookup
+  CREATIVE_ID=$(jq -r --arg aid "$AD_ID" '.[$aid] // empty' "$CREATIVE_LOOKUP_FILE")
   if [[ -z "$CREATIVE_ID" ]]; then
     echo "    WARNING: No creative_id found for ad $AD_ID, skipping"
     echo '{"error": "no_creative_id"}' > "$AD_DIR/metadata.json"
     continue
   fi
 
-  # Fetch creative details from Meta API.
-  # Note: token appears in process list during curl execution — ephemeral and host-local.
-  CREATIVE_JSON=$(curl -s "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url&access_token=$TOKEN")
+  # Fetch creative details from Meta API
+  CREATIVE_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url" -H "Authorization: Bearer $TOKEN") || true
 
   # Check for API errors
   API_ERROR=$(echo "$CREATIVE_JSON" | jq -r '.error.message // empty')
@@ -108,7 +123,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
 
   if [[ -n "$VIDEO_ID" ]]; then
     # === VIDEO AD ===
-    VIDEO_JSON=$(curl -s "https://graph.facebook.com/$API_VERSION/$VIDEO_ID?fields=source,length&access_token=$TOKEN")
+    VIDEO_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$VIDEO_ID?fields=source,length" -H "Authorization: Bearer $TOKEN") || true
 
     SOURCE_URL=$(echo "$VIDEO_JSON" | jq -r '.source // empty')
     DURATION=$(echo "$VIDEO_JSON" | jq -r '.length // 0')
@@ -211,14 +226,17 @@ json.dump({'type': 'image', 'width': w, 'height': h, 'orientation': orient}, sys
       echo '{"type": "unknown", "error": "no_media_url"}' > "$AD_DIR/metadata.json"
     fi
   fi
-done
+done < "$AD_TSV"
+
+# Clean up pre-extracted data
+rm -f "$AD_TSV" "$CREATIVE_LOOKUP_FILE"
 
 # Build artifacts manifest
 echo "Building manifest..."
 python3 << 'PYEOF'
 import json, os, glob, re
 
-creatives_dir = os.environ.get("CREATIVES_DIR", os.path.expanduser("~/.meta-ads-intel/creatives"))
+creatives_dir = os.environ.get("CREATIVES_TMP", os.environ.get("CREATIVES_DIR", os.path.expanduser("~/.meta-ads-intel/creatives")))
 input_file = os.environ.get("INPUT_FILE")
 
 targets = json.load(open(input_file))
@@ -255,5 +273,10 @@ for ad in targets:
 json.dump(manifest, open(os.path.join(creatives_dir, "manifest.json"), "w"), indent=2)
 print(f"Manifest: {len(manifest)} creatives, {total_frames} total frames")
 PYEOF
+
+# Atomic swap: replace old creatives with new
+rm -rf "$CREATIVES_DIR"
+mv "$CREATIVES_TMP" "$CREATIVES_DIR"
+trap - EXIT
 
 echo "Creative artifact extraction complete. Files in $CREATIVES_DIR/"

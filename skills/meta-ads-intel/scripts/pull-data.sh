@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+umask 077
 
 # Pull Meta Ads data via the meta-ads CLI.
 # Stores raw JSON in _raw/, summarizes, then runs prepare-analysis.sh
@@ -54,6 +55,22 @@ warn_if_truncated() {
   fi
 }
 
+# TTL-based cache check: is_cache_fresh <file> <max_age_seconds>
+is_cache_fresh() {
+  local file="$1" max_age="$2"
+  [[ ! -e "$file" ]] && return 1
+  local mtime now age
+  # macOS stat vs GNU stat
+  if stat -f %m "$file" &>/dev/null; then
+    mtime=$(stat -f %m "$file")
+  else
+    mtime=$(stat -c %Y "$file")
+  fi
+  now=$(date +%s)
+  age=$((now - mtime))
+  [[ $age -lt $max_age ]]
+}
+
 if ! command -v jq &>/dev/null; then
   echo "Error: jq is required but not installed. Install with: brew install jq" >&2
   exit 1
@@ -90,6 +107,29 @@ update_manifest() {
 
 mkdir -p "$DATA_DIR"
 
+# Prevent concurrent runs from corrupting shared master files
+LOCKDIR="$DATA_DIR/.pull-lock"
+# Remove stale lock (>30 min old) — likely from a crashed previous run
+if [[ -d "$LOCKDIR" ]] && ! is_cache_fresh "$LOCKDIR" 1800; then
+  echo "Warning: Removing stale lock (>30 min old): $LOCKDIR" >&2
+  rmdir "$LOCKDIR" 2>/dev/null || rm -rf "$LOCKDIR"
+fi
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  echo "Error: Another pull-data.sh instance is running (lockdir: $LOCKDIR)." >&2
+  echo "  If this is stale, remove it: rmdir $LOCKDIR" >&2
+  exit 1
+fi
+trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
+
+# Auto-migrate v2 config keys (target_ctr→ctr, target_engagement_rate→engagement_rate)
+if [[ -f "$SKILL_CONFIG" ]] && jq -e '.targets.OUTCOME_TRAFFIC.target_ctr // .targets.OUTCOME_ENGAGEMENT.target_engagement_rate' "$SKILL_CONFIG" &>/dev/null; then
+  jq '
+    if .targets.OUTCOME_TRAFFIC.target_ctr then .targets.OUTCOME_TRAFFIC.ctr = .targets.OUTCOME_TRAFFIC.target_ctr | del(.targets.OUTCOME_TRAFFIC.target_ctr) else . end |
+    if .targets.OUTCOME_ENGAGEMENT.target_engagement_rate then .targets.OUTCOME_ENGAGEMENT.engagement_rate = .targets.OUTCOME_ENGAGEMENT.target_engagement_rate | del(.targets.OUTCOME_ENGAGEMENT.target_engagement_rate) else . end
+  ' "$SKILL_CONFIG" > "${SKILL_CONFIG}.tmp" && mv "${SKILL_CONFIG}.tmp" "$SKILL_CONFIG"
+  echo "  Migrated config keys (target_ctr→ctr, target_engagement_rate→engagement_rate)"
+fi
+
 # ─── Timestamped run directory ──────────────────────────────────────────────
 RUN_DIR="$DATA_DIR/$(date '+%Y-%m-%d_%H%M')"
 RAW_DIR="$RUN_DIR/_raw"
@@ -98,61 +138,68 @@ mkdir -p "$RAW_DIR"
 echo "Pulling Meta Ads data ($DATE_PRESET)..."
 echo "Run directory: $RUN_DIR"
 
-# Pull period data into _raw/
+# Pull period data into _raw/ (3 levels in parallel)
 echo "  Pulling period data ($DATE_PRESET)..."
 "$CLI" insights get \
   --account-id "$ACCOUNT_ID" \
   --date-preset "$DATE_PRESET" \
   --level campaign \
   --limit 500 \
-  -o json > "$RAW_DIR/campaigns.json"
-warn_if_truncated "$RAW_DIR/campaigns.json" "period campaigns"
+  -o json > "$RAW_DIR/campaigns.json" &
+PID_CAMP=$!
 
 "$CLI" insights get \
   --account-id "$ACCOUNT_ID" \
   --date-preset "$DATE_PRESET" \
   --level adset \
   --limit 500 \
-  -o json > "$RAW_DIR/adsets.json"
-warn_if_truncated "$RAW_DIR/adsets.json" "period adsets"
+  -o json > "$RAW_DIR/adsets.json" &
+PID_ADSET=$!
 
 "$CLI" insights get \
   --account-id "$ACCOUNT_ID" \
   --date-preset "$DATE_PRESET" \
   --level ad \
   --limit 500 \
-  -o json > "$RAW_DIR/ads.json"
+  -o json > "$RAW_DIR/ads.json" &
+PID_AD=$!
+
+# Wait for all and check exit codes
+PULL_FAIL=0
+wait "$PID_CAMP" || { echo "Error: campaign insights pull failed" >&2; PULL_FAIL=1; }
+wait "$PID_ADSET" || { echo "Error: adset insights pull failed" >&2; PULL_FAIL=1; }
+wait "$PID_AD" || { echo "Error: ad insights pull failed" >&2; PULL_FAIL=1; }
+if [[ $PULL_FAIL -ne 0 ]]; then exit 1; fi
+
+warn_if_truncated "$RAW_DIR/campaigns.json" "period campaigns"
+warn_if_truncated "$RAW_DIR/adsets.json" "period adsets"
 warn_if_truncated "$RAW_DIR/ads.json" "period ads"
 
-# Creatives + account (cached at DATA_DIR level).
-# To refresh after launching new ads: rm ~/.meta-ads-intel/data/creatives-master.json
-if [[ ! -f "$DATA_DIR/creatives-master.json" ]]; then
+# Campaign metadata — always re-pull (lightweight, provides objective lookup)
+"$CLI" campaigns list \
+  --account-id "$ACCOUNT_ID" \
+  --limit 500 \
+  -o json > "$DATA_DIR/campaigns-master.json"
+warn_if_truncated "$DATA_DIR/campaigns-master.json" "campaign metadata"
+ln -sf "$DATA_DIR/campaigns-master.json" "$RAW_DIR/campaigns-meta.json"
+
+# Creatives (24h TTL — re-pull after launching new ads)
+if ! is_cache_fresh "$DATA_DIR/creatives-master.json" 86400; then
   "$CLI" ads list \
     --account-id "$ACCOUNT_ID" \
     --limit 500 \
     -o json > "$DATA_DIR/creatives-master.json"
   warn_if_truncated "$DATA_DIR/creatives-master.json" "ad creatives"
 fi
-cp "$DATA_DIR/creatives-master.json" "$RAW_DIR/creatives.json"
+ln -sf "$DATA_DIR/creatives-master.json" "$RAW_DIR/creatives.json"
 
-# Campaign metadata (cached at DATA_DIR level, same pattern as creatives).
-# Provides objective field that insights API does not return.
-# To refresh after creating/deleting campaigns: rm ~/.meta-ads-intel/data/campaigns-master.json
-if [[ ! -f "$DATA_DIR/campaigns-master.json" ]]; then
-  "$CLI" campaigns list \
-    --account-id "$ACCOUNT_ID" \
-    --limit 500 \
-    -o json > "$DATA_DIR/campaigns-master.json"
-  warn_if_truncated "$DATA_DIR/campaigns-master.json" "campaign metadata"
-fi
-cp "$DATA_DIR/campaigns-master.json" "$RAW_DIR/campaigns-meta.json"
-
-if [[ ! -f "$DATA_DIR/account-master.json" ]]; then
+# Account info (7-day TTL — rarely changes)
+if ! is_cache_fresh "$DATA_DIR/account-master.json" 604800; then
   "$CLI" accounts get \
     --account-id "$ACCOUNT_ID" \
     -o json > "$DATA_DIR/account-master.json"
 fi
-cp "$DATA_DIR/account-master.json" "$RAW_DIR/account.json"
+ln -sf "$DATA_DIR/account-master.json" "$RAW_DIR/account.json"
 
 # Summarize _raw/ → summary files in run dir
 echo "  Summarizing period data..."
@@ -161,10 +208,20 @@ if [[ ! -f "$RAW_DIR/campaigns-summary.json" ]]; then
   echo "Error: summarize-data.sh produced no campaigns-summary.json" >&2
   exit 1
 fi
-# Move summaries up to run dir (keep _raw/ clean)
-mv "$RAW_DIR"/campaigns-summary.json "$RUN_DIR/" 2>/dev/null || true
-mv "$RAW_DIR"/adsets-summary.json "$RUN_DIR/" 2>/dev/null || true
-mv "$RAW_DIR"/ads-summary.json "$RUN_DIR/" 2>/dev/null || true
+# Move summaries to _summaries/ subdir (keep _raw/ clean)
+PULL_WARNINGS=()
+mkdir -p "$RUN_DIR/_summaries"
+mv "$RAW_DIR"/campaigns-summary.json "$RUN_DIR/_summaries/"
+if [[ -f "$RAW_DIR/adsets-summary.json" ]]; then
+  mv "$RAW_DIR"/adsets-summary.json "$RUN_DIR/_summaries/"
+else
+  PULL_WARNINGS+=("adsets-summary.json missing — adset-level analysis will be skipped")
+fi
+if [[ -f "$RAW_DIR/ads-summary.json" ]]; then
+  mv "$RAW_DIR"/ads-summary.json "$RUN_DIR/_summaries/"
+else
+  PULL_WARNINGS+=("ads-summary.json missing — ad-level and creative analysis will be skipped")
+fi
 
 # Pull recent window (last_7d) for trend comparison
 if [[ "$DATE_PRESET" != "last_7d" ]]; then
@@ -174,7 +231,7 @@ if [[ "$DATE_PRESET" != "last_7d" ]]; then
   echo "  Pulling recent window (last_7d) for comparison..."
 
   # Copy campaign metadata so summarization can join objectives
-  cp "$DATA_DIR/campaigns-master.json" "$RECENT_RAW/campaigns-meta.json" 2>/dev/null || true
+  ln -sf "$DATA_DIR/campaigns-master.json" "$RECENT_RAW/campaigns-meta.json" 2>/dev/null || true
 
   # Only pull campaign-level for recent window — trends.json only needs campaign data.
   # Skipping adset/ad level saves 2 API calls per run.
@@ -194,7 +251,12 @@ if [[ "$DATE_PRESET" != "last_7d" ]]; then
   rm -rf "$RECENT_RAW"
 fi
 
-# Run prepare-analysis.sh → 6 agent-ready files
+# Write pull warnings for pipeline-status.json
+if [[ ${#PULL_WARNINGS[@]} -gt 0 ]]; then
+  printf '%s\n' "${PULL_WARNINGS[@]}" | jq -Rn '[inputs]' > "$RUN_DIR/_pull-warnings.json"
+fi
+
+# Run prepare-analysis.sh → 6 agent-ready files + pipeline-status.json
 echo "  Preparing analysis files..."
 bash "$SCRIPT_DIR/prepare-analysis.sh" "$RUN_DIR"
 

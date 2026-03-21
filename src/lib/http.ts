@@ -1,4 +1,6 @@
-const BASE_URL = 'https://graph.facebook.com/v21.0';
+import { API_VERSION } from './constants.js';
+
+const BASE_URL = `https://graph.facebook.com/${API_VERSION}`;
 
 export interface HttpOptions {
   method?: string;

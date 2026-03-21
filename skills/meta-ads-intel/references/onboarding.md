@@ -56,15 +56,27 @@ Fetch account name and currency:
 meta-ads accounts get --account-id <account_id> -o json
 ```
 
-Get current performance for smart threshold defaults:
+Pull campaigns-meta for objective detection (reused by compute-defaults.sh):
 ```bash
-bash <skill-dir>/scripts/compute-defaults.sh <account_id>
+meta-ads campaigns list --account-id <account_id> --limit 200 -o json > /tmp/_onboard_campaigns_meta.json
+```
+
+Get current per-objective performance defaults:
+```bash
+bash <skill-dir>/scripts/compute-defaults.sh <account_id> /tmp/_onboard_campaigns_meta.json
 ```
 `<skill-dir>` is the directory containing this file's parent SKILL.md. Resolve from file path at runtime.
 
-Output is `{"spend": N, "purchases": N, "revenue": N, "roas": N, "current_cpa": N, "current_roas": N}`.
+Output is `{"objectives": {"OUTCOME_SALES": {...}, "OUTCOME_TRAFFIC": {...}}, "total_spend": N, "objectives_detected": [...]}`.
 
 Store results — used in Phase 4 (creative scan) and Phase 5 (target setting).
+
+Present the objective breakdown to the user:
+"Your account has [N] sales campaigns ([spend]), [N] traffic campaigns ([spend]), ..." for each detected objective.
+
+Set `primary_objective` to the objective with highest spend.
+
+Store `objectives_detected` — only objectives with >5% of total spend will get target prompts. Others get sensible defaults with a note.
 
 ## Phase 3: Brand Context
 
@@ -125,7 +137,7 @@ bash <skill-dir>/scripts/onboard-scan.sh <account_id>
 
 Read the JSON output. Three scenarios:
 
-**Scenario A: ads_with_purchases > 0** (most common)
+**Scenario A: ads_with_conversions > 0** (most common)
 - Read the `winners` array — identify common patterns in creative_body/creative_title:
   - What hooks do top ads use? (urgency, social proof, sensory, discount, etc.)
   - What format dominates winners? (video vs image from format_breakdown)
@@ -135,9 +147,9 @@ Read the JSON output. Three scenarios:
   - Winning format = dominant format in winners
   - Weak format = dominant format in losers
 
-**Scenario B: ads_with_purchases == 0, total_ads > 0**
-- Ads exist but no purchase data yet
-- Set fallback: "No purchase data yet. Hook angles and format preferences will be populated after the first analysis with purchase data."
+**Scenario B: ads_with_conversions == 0, total_ads > 0**
+- Ads exist but no conversion data yet
+- Set fallback: "No conversion data yet. Hook angles and format preferences will be populated after the first analysis with conversion data."
 
 **Scenario C: total_ads == 0**
 - Brand new account, no ads
@@ -145,14 +157,30 @@ Read the JSON output. Three scenarios:
 
 ## Phase 5: Target Setting
 
-Present current CPA/ROAS from compute-defaults.sh (Phase 2). Ask for targets — batch into one AskUserQuestion when possible:
+For each detected objective above the 5% spend threshold, ask for the relevant targets. Batch objectives into as few AskUserQuestion calls as reasonable (group by topic, max 4 questions per call).
 
-1. Target CPA — "Your current average CPA is [current_cpa]. What is your target CPA (breakeven or goal acquisition cost)?"
-2. Target ROAS — "Your current blended ROAS is [current_roas]. What is your target ROAS?"
-3. Max Frequency — "Default is 5.0 (above this = audience saturation). Keep default or adjust?"
-4. Min Spend Threshold — "Minimum spend to include an ad set in recommendations. Filters noise." Suggest sensible default based on currency (1000 for INR, 10 for USD/EUR).
+### Per-objective targets
 
-If compute-defaults.sh returned null CPA (zero purchases): note "No purchase data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
+**OUTCOME_SALES**: "Your sales CPA is [current_cpa]. What is your target CPA?" + "Your sales ROAS is [current_roas]. Target ROAS?"
+
+**OUTCOME_TRAFFIC**: "Your traffic CPC is [current_cpc]. Target CPC?" + "Your CTR is [current_ctr]%. Target CTR?"
+
+**OUTCOME_AWARENESS**: "Your CPM is [current_cpm]. Target CPM?" + "Target max frequency for awareness? (default 3.0)"
+
+**OUTCOME_ENGAGEMENT**: "Your cost per engagement is [current_cpe]. Target CPE?"
+
+**OUTCOME_LEADS**: "Your cost per lead is [current_cpl]. Target CPL?"
+
+**OUTCOME_APP_PROMOTION**: "Your cost per install is [current_cpi]. Target CPI?"
+
+### Global targets (ask once, not per-objective)
+
+1. Max Frequency — "Default is 5.0 (above this = audience saturation). Keep default or adjust?"
+2. Min Spend Threshold — "Minimum spend to include an ad set in recommendations. Filters noise." Suggest sensible default based on currency (1000 for INR, 10 for USD/EUR).
+
+For objectives below 5% spend threshold: use sensible defaults and note "Your [objective] campaigns are <5% of spend — using default [metric] target. Update in config.json anytime."
+
+If compute-defaults.sh returned null for a metric (zero conversions): note "No [conversion type] data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
 
 ## Phase 6: Write Configuration
 
@@ -162,19 +190,38 @@ Write `~/.meta-ads-intel/config.json`:
   "account_id": "<account_id>",
   "account_name": "<name>",
   "currency": "<currency>",
+  "config_version": 2,
+  "objectives_detected": ["OUTCOME_SALES", "OUTCOME_TRAFFIC"],
+  "primary_objective": "OUTCOME_SALES",
   "targets": {
-    "cpa": "<user_target>",
-    "roas": "<user_target>",
-    "max_frequency": "<user_target>",
-    "min_spend": "<user_target>"
+    "global": {
+      "max_frequency": 5.0,
+      "min_spend": 1000
+    },
+    "OUTCOME_SALES": {
+      "cpa": 1100,
+      "roas": 4.0
+    },
+    "OUTCOME_TRAFFIC": {
+      "cpc": 5,
+      "ctr": 2.0
+    }
   },
   "analysis": {
     "top_n": 15,
     "bottom_n": 10,
-    "zero_purchase_n": 10
+    "zero_conversion_n": 10
   }
 }
 ```
+
+Only include objectives detected in the account. Per-objective target keys:
+- OUTCOME_SALES: `cpa`, `roas`
+- OUTCOME_TRAFFIC: `cpc`, `ctr`
+- OUTCOME_AWARENESS: `cpm`, `max_frequency`
+- OUTCOME_ENGAGEMENT: `cpe`, `engagement_rate`
+- OUTCOME_LEADS: `cpl`
+- OUTCOME_APP_PROMOTION: `cpi`
 
 Write brand context to `~/.meta-ads-intel/brand-context.md` (user-owned, survives skill updates). Use this format:
 
@@ -199,7 +246,9 @@ mkdir -p ~/.meta-ads-intel/data ~/.meta-ads-intel/reports ~/.meta-ads-intel/crea
 Print summary:
 - Account: [name] ([id])
 - Currency: [currency]
-- Targets: CPA [X], ROAS [X], Frequency [X], Min Spend [X]
+- Objectives: [list with spend %]
+- Primary objective: [highest spend]
+- Targets: [per-objective summary]
 - Brand context: [product summary]
 - Creative patterns: [hook angles or "pending first analysis"]
 

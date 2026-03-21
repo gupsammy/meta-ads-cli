@@ -1,12 +1,13 @@
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 import { ConfigManager } from './lib/config.js';
+import { API_VERSION } from './lib/constants.js';
 import { EXIT_USAGE } from './lib/output.js';
 
 const config = new ConfigManager('meta-ads');
 
-const OAUTH_AUTHORIZE_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
-const OAUTH_TOKEN_URL = 'https://graph.facebook.com/v21.0/oauth/access_token';
+const OAUTH_AUTHORIZE_URL = `https://www.facebook.com/${API_VERSION}/dialog/oauth`;
+const OAUTH_TOKEN_URL = `https://graph.facebook.com/${API_VERSION}/oauth/access_token`;
 const REDIRECT_PORT = 8484;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/callback`;
 const SCOPES = 'ads_management,ads_read';
@@ -85,7 +86,12 @@ export async function exchangeCodeForToken(
     code,
   });
 
-  const response = await fetch(`${OAUTH_TOKEN_URL}?${params.toString()}`);
+  // POST body instead of query string to avoid leaking client_secret in logs
+  const response = await fetch(OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Token exchange failed: ${text}`);
@@ -105,7 +111,12 @@ export async function exchangeForLongLivedToken(
     fb_exchange_token: shortLivedToken,
   });
 
-  const response = await fetch(`${OAUTH_TOKEN_URL}?${params.toString()}`);
+  // POST body instead of query string to avoid leaking client_secret in logs
+  const response = await fetch(OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Long-lived token exchange failed: ${text}`);

@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+umask 077
 
 # Summarize raw Meta Ads JSON into compact agent-readable summaries.
 # Extracts only the fields the agent needs from verbose actions arrays.
@@ -8,7 +9,11 @@ set -e
 # Usage: summarize-data.sh <directory>
 #   where <directory> contains campaigns.json, adsets.json, ads.json, creatives.json
 
-DIR="$1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/jq-defs.sh
+. "$SCRIPT_DIR/lib/jq-defs.sh"
+OBJ_MAP="$SCRIPT_DIR/../references/objective-map.json"
+DIR="${1:-}"
 if [[ -z "$DIR" || ! -d "$DIR" ]]; then
   echo "Usage: summarize-data.sh <directory>" >&2
   exit 1
@@ -32,78 +37,59 @@ else
   echo '{}' > "$OBJ_LOOKUP"
 fi
 
+# Normalize legacy objectives to OUTCOME_* equivalents using objective-map.json
+if [[ -f "$OBJ_LOOKUP" && -s "$OBJ_LOOKUP" ]]; then
+  jq --slurpfile omap "$OBJ_MAP" 'map_values(. as $v | $omap[0][$v] // $v)' \
+    "$OBJ_LOOKUP" > "${OBJ_LOOKUP}.tmp" && mv "${OBJ_LOOKUP}.tmp" "$OBJ_LOOKUP"
+fi
+
 # Summarize campaigns
 if [[ -f "$DIR/campaigns.json" ]]; then
-  jq --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] | {
-    campaign_id: (.campaign_id // null),
-    campaign_name: (.campaign_name // null),
-    objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
-    date_start,
-    date_stop,
-    spend: ((.spend // "0") | tonumber),
-    impressions: ((.impressions // "0") | tonumber),
-    clicks: ((.clicks // "0") | tonumber),
-    cpc: ((.cpc // "0") | tonumber),
-    ctr: ((.ctr // "0") | tonumber),
-    cpm: ((.cpm // "0") | tonumber),
-    frequency: ((.frequency // "0") | tonumber),
-    reach: ((.reach // "0") | tonumber),
-    purchases: ((.actions // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    revenue: ((.action_values // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
-    add_to_cart: ((.actions // []) | (map(select(.action_type == "omni_add_to_cart")) + map(select(.action_type == "add_to_cart"))) | .[0].value // "0" | tonumber),
-    initiate_checkout: ((.actions // []) | (map(select(.action_type == "omni_initiated_checkout")) + map(select(.action_type == "initiate_checkout"))) | .[0].value // "0" | tonumber),
-    view_content: ((.actions // []) | (map(select(.action_type == "omni_view_content")) + map(select(.action_type == "view_content"))) | .[0].value // "0" | tonumber),
-    link_clicks: ((.actions // []) | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
-    landing_page_views: ((.actions // []) | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber)
-  } | . + {cpa: (if .purchases > 0 then (.spend / .purchases) else null end)}]' \
-    "$DIR/campaigns.json" > "$DIR/campaigns-summary.json"
+  jq --slurpfile obj "$OBJ_LOOKUP" "$JQ_DEFS"'
+    [(.data // .)[] |
+      extract_metrics + {
+        campaign_id: (.campaign_id // null),
+        campaign_name: (.campaign_name // null),
+        objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
+        date_start,
+        date_stop
+      } | add_derived
+    ]' "$DIR/campaigns.json" > "$DIR/campaigns-summary.json"
   echo "  campaigns-summary.json: $(wc -l < "$DIR/campaigns-summary.json" | tr -d ' ') lines"
 fi
 
 # Summarize adsets
 if [[ -f "$DIR/adsets.json" ]]; then
-  jq --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] | {
-    adset_id: (.adset_id // null),
-    adset_name: (.adset_name // null),
-    campaign_id: (.campaign_id // null),
-    campaign_name: (.campaign_name // null),
-    objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
-    date_start,
-    date_stop,
-    spend: ((.spend // "0") | tonumber),
-    impressions: ((.impressions // "0") | tonumber),
-    clicks: ((.clicks // "0") | tonumber),
-    cpc: ((.cpc // "0") | tonumber),
-    ctr: ((.ctr // "0") | tonumber),
-    cpm: ((.cpm // "0") | tonumber),
-    frequency: ((.frequency // "0") | tonumber),
-    reach: ((.reach // "0") | tonumber),
-    purchases: ((.actions // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    revenue: ((.action_values // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-    roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
-    add_to_cart: ((.actions // []) | (map(select(.action_type == "omni_add_to_cart")) + map(select(.action_type == "add_to_cart"))) | .[0].value // "0" | tonumber),
-    initiate_checkout: ((.actions // []) | (map(select(.action_type == "omni_initiated_checkout")) + map(select(.action_type == "initiate_checkout"))) | .[0].value // "0" | tonumber),
-    view_content: ((.actions // []) | (map(select(.action_type == "omni_view_content")) + map(select(.action_type == "view_content"))) | .[0].value // "0" | tonumber),
-    link_clicks: ((.actions // []) | map(select(.action_type == "link_click")) | .[0].value // "0" | tonumber),
-    landing_page_views: ((.actions // []) | map(select(.action_type == "landing_page_view")) | .[0].value // "0" | tonumber)
-  } | . + {cpa: (if .purchases > 0 then (.spend / .purchases) else null end)}]' \
-    "$DIR/adsets.json" > "$DIR/adsets-summary.json"
+  jq --slurpfile obj "$OBJ_LOOKUP" "$JQ_DEFS"'
+    [(.data // .)[] |
+      extract_metrics + {
+        adset_id: (.adset_id // null),
+        adset_name: (.adset_name // null),
+        campaign_id: (.campaign_id // null),
+        campaign_name: (.campaign_name // null),
+        objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
+        date_start,
+        date_stop
+      } | add_derived
+    ]' "$DIR/adsets.json" > "$DIR/adsets-summary.json"
   echo "  adsets-summary.json: $(wc -l < "$DIR/adsets-summary.json" | tr -d ' ') lines"
 fi
 
-# Summarize ads — join with creative content from creatives.json
+# Summarize ads — always build creative lookup (empty {} if no creatives.json)
 if [[ -f "$DIR/ads.json" ]]; then
   if [[ -f "$DIR/creatives.json" ]]; then
-    # Build creative lookup: ad_id -> body + title only (URLs handled by prepare-analysis.sh from _raw/)
     jq 'INDEX((.data // .)[] ; .id) | map_values({
       creative_body: .creative_body,
       creative_title: .creative_title
     })' "$DIR/creatives.json" > "$DIR/_creative_lookup.json" 2>/dev/null || echo '{}' > "$DIR/_creative_lookup.json"
+  else
+    echo '{}' > "$DIR/_creative_lookup.json"
+  fi
 
-    jq --slurpfile creatives "$DIR/_creative_lookup.json" --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] |
+  jq --slurpfile creatives "$DIR/_creative_lookup.json" --slurpfile obj "$OBJ_LOOKUP" "$JQ_DEFS"'
+    [(.data // .)[] |
       ((.ad_id // "") | tostring) as $aid |
-      {
+      extract_metrics + {
         ad_id: (.ad_id // null),
         ad_name: (.ad_name // null),
         adset_id: (.adset_id // null),
@@ -112,45 +98,12 @@ if [[ -f "$DIR/ads.json" ]]; then
         objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
         date_start,
         date_stop,
-        spend: ((.spend // "0") | tonumber),
-        impressions: ((.impressions // "0") | tonumber),
-        clicks: ((.clicks // "0") | tonumber),
-        cpc: ((.cpc // "0") | tonumber),
-        ctr: ((.ctr // "0") | tonumber),
-        frequency: ((.frequency // "0") | tonumber),
-        reach: ((.reach // "0") | tonumber),
-        purchases: ((.actions // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-        revenue: ((.action_values // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-        roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber),
         creative_body: (if $aid != "" then ($creatives[0][$aid].creative_body // "") else "" end),
         creative_title: (if $aid != "" then ($creatives[0][$aid].creative_title // "") else "" end)
-      } | . + {cpa: (if .purchases > 0 then (.spend / .purchases) else null end)}]' \
-      "$DIR/ads.json" > "$DIR/ads-summary.json"
+      } | add_derived
+    ]' "$DIR/ads.json" > "$DIR/ads-summary.json"
 
-    rm -f "$DIR/_creative_lookup.json"
-  else
-    jq --slurpfile obj "$OBJ_LOOKUP" '[(.data // .)[] | {
-      ad_id: (.ad_id // null),
-      ad_name: (.ad_name // null),
-      adset_id: (.adset_id // null),
-      campaign_id: (.campaign_id // null),
-      campaign_name: (.campaign_name // null),
-      objective: ((.campaign_id // "") | tostring | . as $cid | ($obj[0][$cid] // "UNKNOWN")),
-      date_start,
-      date_stop,
-      spend: ((.spend // "0") | tonumber),
-      impressions: ((.impressions // "0") | tonumber),
-      clicks: ((.clicks // "0") | tonumber),
-      cpc: ((.cpc // "0") | tonumber),
-      ctr: ((.ctr // "0") | tonumber),
-      frequency: ((.frequency // "0") | tonumber),
-      reach: ((.reach // "0") | tonumber),
-      purchases: ((.actions // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      revenue: ((.action_values // []) | (map(select(.action_type == "omni_purchase")) + map(select(.action_type == "purchase"))) | .[0].value // "0" | tonumber),
-      roas: ((.purchase_roas // []) | map(select(.action_type == "omni_purchase")) | .[0].value // "0" | tonumber)
-    } | . + {cpa: (if .purchases > 0 then (.spend / .purchases) else null end)}]' \
-      "$DIR/ads.json" > "$DIR/ads-summary.json"
-  fi
+  rm -f "$DIR/_creative_lookup.json"
   echo "  ads-summary.json: $(wc -l < "$DIR/ads-summary.json" | tr -d ' ') lines"
 fi
 
