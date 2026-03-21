@@ -41,7 +41,7 @@ else
 fi
 
 # Input file — auto-detect from latest run dir if not specified
-if [[ -n "$1" ]]; then
+if [[ -n "${1:-}" ]]; then
   export INPUT_FILE="$1"
 else
   # Find latest run directory

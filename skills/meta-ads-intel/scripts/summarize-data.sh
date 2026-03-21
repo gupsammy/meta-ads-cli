@@ -11,7 +11,7 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OBJ_MAP="$SCRIPT_DIR/../references/objective-map.json"
-DIR="$1"
+DIR="${1:-}"
 if [[ -z "$DIR" || ! -d "$DIR" ]]; then
   echo "Usage: summarize-data.sh <directory>" >&2
   exit 1

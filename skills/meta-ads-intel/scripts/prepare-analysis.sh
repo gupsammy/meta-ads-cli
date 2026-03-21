@@ -13,7 +13,7 @@ umask 077
 # Produces: account-health.json, budget-actions.json, funnel.json,
 #           trends.json, creative-analysis.json, creative-media.json
 
-RUN_DIR="$1"
+RUN_DIR="${1:-}"
 if [[ -z "$RUN_DIR" || ! -d "$RUN_DIR" ]]; then
   echo "Usage: prepare-analysis.sh <run-dir>" >&2
   exit 1
@@ -275,6 +275,12 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
                 if .link_click_cpc != null and .link_click_cpc < ($t_cpc * 0.8) then {action: "scale", reason: ("CPC " + (.link_click_cpc | . * 100 | round / 100 | tostring) + " below target")}
                 elif .link_click_cpc != null and .link_click_cpc > ($t_cpc * 1.2) then {action: "reduce", reason: ("CPC " + (.link_click_cpc | . * 100 | round / 100 | tostring) + " above threshold")}
                 else {action: "maintain", reason: "within target range"} end)
+              elif $t_ctr > 0 then (
+                if .link_click_ctr > ($t_ctr * 1.2) then
+                  {action: "scale", reason: ("CTR " + (.link_click_ctr | . * 100 | round / 100 | tostring) + "% above target")}
+                elif .link_click_ctr < ($t_ctr * 0.8) then
+                  {action: "reduce", reason: ("CTR " + (.link_click_ctr | . * 100 | round / 100 | tostring) + "% below threshold")}
+                else {action: "maintain", reason: "within target range"} end)
               else {action: "maintain", reason: "no targets set"} end
             )
 
@@ -432,9 +438,12 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate},
-                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate}
-                ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
+                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: 1.5},
+                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: 70.0}
+                ] | map(select(.rate != null)) |
+                map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
+                sort_by(-.gap) | .[0] // null |
+                if . then {stage, label, rate} else null end
               )
             }
 
@@ -470,9 +479,12 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "engagement_rate", label: "impression \u2192 engagement", rate: .rates.engagement_rate},
-                  {stage: "deep_engagement_rate", label: "engagement \u2192 page engagement", rate: .rates.deep_engagement_rate}
-                ] | map(select(.rate != null)) | sort_by(.rate) | .[0] // null
+                  {stage: "engagement_rate", label: "impression \u2192 engagement", rate: .rates.engagement_rate, expected: 2.0},
+                  {stage: "deep_engagement_rate", label: "engagement \u2192 page engagement", rate: .rates.deep_engagement_rate, expected: 15.0}
+                ] | map(select(.rate != null)) |
+                map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
+                sort_by(-.gap) | .[0] // null |
+                if . then {stage, label, rate} else null end
               )
             }
 
@@ -691,7 +703,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
     def format_ad:
       {
         ad_name, campaign_name, creative_body, creative_title, spend,
-        roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
+        roas: (if .roas then (.roas | . * 100 | round / 100) else 0 end),
         cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
         cpc: (.cpc | . * 100 | round / 100),
         ctr: (.ctr | . * 100 | round / 100),
@@ -705,8 +717,8 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
     ([.[].objective] | unique | sort) as $objectives |
 
     # URL lookup from raw creatives
-    ($creatives[0] | if type == "array" and length > 0 then
-      ((.data // .) | if type == "array" then INDEX(.[]; .id) | map_values({
+    ($creatives[0] | (.data // .) | if type == "array" and length > 0 then
+      (INDEX(.[]; .id) | map_values({
         creative_image_url: (.creative_image_url // ""),
         creative_thumbnail_url: (.creative_thumbnail_url // "")
       }) else {} end)
@@ -745,7 +757,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
         ad_name: .ad_name,
         objective: .objective,
         rank: .rank,
-        roas: (if .spend > 0 then (.revenue / .spend | . * 100 | round / 100) else 0 end),
+        roas: (if .roas then (.roas | . * 100 | round / 100) else 0 end),
         cpa: (if .cpa then (.cpa | . * 100 | round / 100) else null end),
         spend: .spend,
         creative_image_url: ($url_lookup[($aid)] // {}).creative_image_url // "",
