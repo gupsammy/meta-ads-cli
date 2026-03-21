@@ -24,6 +24,7 @@
 This repo includes an AI agent skill that turns your ad account data into actionable intelligence. Works with any agent that supports the [skills.sh](https://skills.sh) ecosystem (Claude Code, Cursor, Codex, and more).
 
 What it does:
+- Objective-aware analysis — tailors metrics and recommendations to each campaign objective (sales, traffic, awareness)
 - Budget optimization — classifies ad sets as scale/maintain/reduce/pause
 - Creative analysis — ranks ads by ROAS, identifies winning messaging patterns and visual hooks
 - Trend detection — period-over-period and week-over-week performance deltas
