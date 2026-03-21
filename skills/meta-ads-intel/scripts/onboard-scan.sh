@@ -29,10 +29,10 @@ INSIGHTS=$("$CLI" insights get \
   --limit 50 \
   -o json)
 
-# 2. Pull ads with creative fields
+# 2. Pull ads with creative fields (higher limit to cover all insights ads)
 ADS=$("$CLI" ads list \
   --account-id "$ACCOUNT_ID" \
-  --limit 50 \
+  --limit 200 \
   -o json)
 
 # 3. Build creative lookup: ad_id -> body, title, image_url, thumbnail_url
@@ -68,6 +68,7 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     objective: ($obj[$cid] // "UNKNOWN"),
     spend: ((.spend // "0") | tonumber),
     impressions: ((.impressions // "0") | tonumber),
+    reach: ((.reach // "0") | tonumber),
     cpc: ((.cpc // "0") | tonumber),
     ctr: ((.ctr // "0") | tonumber),
     cpm: ((.cpm // "0") | tonumber),
@@ -90,7 +91,7 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
     link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
     link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end),
-    format: (if .has_thumbnail then "video" elif .has_image then "image" else "unknown" end)
+    format: (if .has_thumbnail then "video" elif .has_image then "image" elif (.creative_body != "" or .creative_title != "") then "static" else "unknown" end)
   }
 ]')
 
@@ -136,11 +137,14 @@ echo "$JOINED" | jq '
         }}
       ] | add // {}
     ),
-    format_breakdown: {
-      video: [.[] | select(.format == "video")] | length,
-      image: [.[] | select(.format == "image")] | length,
-      unknown: [.[] | select(.format == "unknown")] | length
-    },
+    format_breakdown: (
+      ([.[] | select(.format == "video")] | length) as $v |
+      ([.[] | select(.format == "image")] | length) as $i |
+      ([.[] | select(.format == "static")] | length) as $s |
+      ([.[] | select(.format == "unknown")] | length) as $u |
+      { video: $v, image: $i, static: $s, unknown: $u,
+        confidence: (if length > 0 and ($u / length > 0.3) then "low" else "high" end) }
+    ),
     objectives_detected: $objectives,
     total_ads: length
   }'

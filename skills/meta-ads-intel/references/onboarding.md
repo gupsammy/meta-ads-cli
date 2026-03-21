@@ -4,7 +4,9 @@ Triggered when Step 0 detects no `~/.meta-ads-intel/config.json`. Six phases: in
 
 Onboarding is its own session. Do NOT continue to analysis after onboarding completes. The user runs /meta-ads-intel again for their first analysis.
 
-When asking questions: use AskUserQuestion tool if available. Otherwise, ask conversationally.
+Do NOT add analysis insights or metric interpretations during onboarding. Onboarding collects context and writes config — save all performance observations for the analysis session.
+
+When asking questions: use AskUserQuestion tool if available (minimum 2 options required — always include a fallback like "I need help" or "Other"). Otherwise, ask conversationally.
 
 ## Phase 1: Install & Setup
 
@@ -140,7 +142,8 @@ Read the JSON output. Three scenarios:
 **Scenario A: ads_with_conversions > 0** (most common)
 - Read the `winners` array — identify common patterns in creative_body/creative_title:
   - What hooks do top ads use? (urgency, social proof, sensory, discount, etc.)
-  - What format dominates winners? (video vs image from format_breakdown)
+  - What format dominates winners? (video vs image vs static from format_breakdown)
+- If `format_breakdown.confidence` is `"low"`, caveat format insights: "Format detection is approximate — some ads could not be classified."
 - Read the `losers` array — identify what losers have in common that winners lack
 - Set:
   - Proven hook angles = patterns from winner copy
@@ -163,7 +166,7 @@ For each detected objective above the 5% spend threshold, ask for the relevant t
 
 **OUTCOME_SALES**: "Your sales CPA is [current_cpa]. What is your target CPA?" + "Your sales ROAS is [current_roas]. Target ROAS?"
 
-**OUTCOME_TRAFFIC**: "Your traffic CPC is [current_cpc]. Target CPC?" + "Your CTR is [current_ctr]%. Target CTR?"
+**OUTCOME_TRAFFIC**: "Your traffic CPC is [current_cpc]. Target CPC?" + "Your link-click CTR is [current_link_ctr]%. Target CTR?"
 
 **OUTCOME_AWARENESS**: "Your CPM is [current_cpm]. Target CPM?" + "Target max frequency for awareness? (default 3.0)"
 
@@ -181,6 +184,17 @@ For each detected objective above the 5% spend threshold, ask for the relevant t
 For objectives below 5% spend threshold: use sensible defaults and note "Your [objective] campaigns are <5% of spend — using default [metric] target. Update in config.json anytime."
 
 If compute-defaults.sh returned null for a metric (zero conversions): note "No [conversion type] data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
+
+### Default Disclosure
+
+After collecting all user-set targets, explicitly list all auto-assigned defaults for sub-5% objectives before writing config:
+
+"For objectives below 5% of spend, I'm using these defaults:
+- [objective] ([spend%]): [metric] = [value], [metric] = [value]
+...
+You can update these anytime in ~/.meta-ads-intel/config.json."
+
+This ensures the user knows exactly what baseline their campaigns will be judged against.
 
 ## Phase 6: Write Configuration
 
