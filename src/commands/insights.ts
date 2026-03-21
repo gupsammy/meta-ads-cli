@@ -1,7 +1,7 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken, resolveAccountId } from '../auth.js';
-import { graphRequestWithRetry, type GraphApiResponse, HttpError } from '../lib/http.js';
-import { printListOutput, printError, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
+import { graphRequestWithRetry, type GraphApiResponse } from '../lib/http.js';
+import { printListOutput, printError, handleCommandError, type OutputFormat, EXIT_USAGE } from '../lib/output.js';
 
 type InsightRow = Record<string, unknown>;
 
@@ -113,12 +113,7 @@ Examples:
 
         printListOutput(data, opts.output);
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 }

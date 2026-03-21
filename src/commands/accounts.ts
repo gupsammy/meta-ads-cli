@@ -1,7 +1,7 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken, requireAccountId } from '../auth.js';
-import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
-import { printListOutput, printOutput, printError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
+import { paginateAll, graphRequestWithRetry } from '../lib/http.js';
+import { printListOutput, printOutput, handleCommandError, type OutputFormat } from '../lib/output.js';
 
 interface AdAccount {
   id: string;
@@ -71,12 +71,7 @@ export function registerAccountsCommands(program: Command): void {
           next_cursor: result.next_cursor,
         });
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 
@@ -110,12 +105,7 @@ export function registerAccountsCommands(program: Command): void {
           opts.output,
         );
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 }

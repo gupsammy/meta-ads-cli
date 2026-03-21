@@ -1,7 +1,8 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken, requireAccountId } from '../auth.js';
-import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
-import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
+import { DESTRUCTIVE_STATUSES } from '../lib/constants.js';
+import { paginateAll, graphRequestWithRetry } from '../lib/http.js';
+import { printListOutput, printOutput, printError, confirmAction, handleCommandError, type OutputFormat, EXIT_USAGE } from '../lib/output.js';
 
 interface Ad {
   id: string;
@@ -16,8 +17,6 @@ interface Ad {
 }
 
 const AD_FIELDS = 'id,name,status,effective_status,adset_id,campaign_id,creative{id,title,body,image_url,thumbnail_url},created_time,updated_time';
-
-const DESTRUCTIVE_STATUSES = ['PAUSED', 'DELETED', 'ARCHIVED'];
 
 export function registerAdsCommands(program: Command): void {
   const ads = program.command('ads').description('Manage ads');
@@ -96,12 +95,7 @@ export function registerAdsCommands(program: Command): void {
           next_cursor: result.next_cursor,
         });
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 
@@ -145,12 +139,7 @@ export function registerAdsCommands(program: Command): void {
           opts.output,
         );
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 
@@ -218,12 +207,7 @@ export function registerAdsCommands(program: Command): void {
 
         printOutput({ ad_id: opts.adId, updated: result.success ?? true, changes: body }, opts.output);
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 }

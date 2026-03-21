@@ -1,7 +1,8 @@
 import { Command, Option } from 'commander';
 import { requireAccessToken, requireAccountId } from '../auth.js';
-import { paginateAll, graphRequestWithRetry, HttpError } from '../lib/http.js';
-import { printListOutput, printOutput, printError, confirmAction, type OutputFormat, EXIT_RUNTIME, EXIT_USAGE } from '../lib/output.js';
+import { DESTRUCTIVE_STATUSES } from '../lib/constants.js';
+import { paginateAll, graphRequestWithRetry } from '../lib/http.js';
+import { printListOutput, printOutput, printError, confirmAction, handleCommandError, type OutputFormat, EXIT_USAGE } from '../lib/output.js';
 
 interface Campaign {
   id: string;
@@ -18,8 +19,6 @@ interface Campaign {
 }
 
 const CAMPAIGN_FIELDS = 'id,name,status,effective_status,objective,daily_budget,lifetime_budget,created_time,updated_time,start_time,stop_time';
-
-const DESTRUCTIVE_STATUSES = ['PAUSED', 'DELETED', 'ARCHIVED'];
 
 export function registerCampaignsCommands(program: Command): void {
   const campaigns = program.command('campaigns').description('Manage ad campaigns');
@@ -87,12 +86,7 @@ Examples:
           next_cursor: result.next_cursor,
         });
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 
@@ -134,12 +128,7 @@ Examples:
           opts.output,
         );
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 
@@ -201,12 +190,7 @@ Examples:
 
         printOutput({ id: result.id, name: opts.name, status: opts.status ?? 'PAUSED', objective: opts.objective }, opts.output);
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 
@@ -286,12 +270,7 @@ Examples:
 
         printOutput({ campaign_id: opts.campaignId, updated: result.success ?? true, changes: body }, opts.output);
       } catch (error) {
-        if (error instanceof HttpError) {
-          printError({ code: error.code, message: error.message, retry_after: error.retryAfter }, opts.output);
-        } else {
-          printError({ code: 'UNKNOWN', message: error instanceof Error ? error.message : String(error) }, opts.output);
-        }
-        process.exit(EXIT_RUNTIME);
+        handleCommandError(error, opts.output);
       }
     });
 }

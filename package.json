@@ -34,7 +34,6 @@
   "author": "Samarth Gupta",
   "license": "MIT",
   "dependencies": {
-    "chalk": "^5.3.0",
     "cli-table3": "^0.6.4",
     "commander": "^12.1.0",
     "csv-stringify": "^6.5.0",
