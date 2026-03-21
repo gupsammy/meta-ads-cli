@@ -70,13 +70,13 @@ echo "Preparing analysis files for $(basename "$RUN_DIR")..."
 
 # Validate input summary files before processing
 for f in campaigns-summary.json adsets-summary.json ads-summary.json; do
-  if [[ -f "$RUN_DIR/$f" ]]; then
-    validate_json "$RUN_DIR/$f" "$f" || exit 1
+  if [[ -f "$RUN_DIR/_summaries/$f" ]]; then
+    validate_json "$RUN_DIR/_summaries/$f" "$f" || exit 1
   fi
 done
 
 # ─── 1. account-health.json ───────────────────────────────────────────────────
-if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
+if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
   jq --arg name "$ACCOUNT_NAME" --arg currency "$CURRENCY" --arg primary "$PRIMARY_OBJ" \
      --slurpfile cfg "$CONFIG" '
 
@@ -204,12 +204,12 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
           else {} end
         )}
       ] | add // {}
-    )' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/account-health.json"
+    )' "$RUN_DIR/_summaries/campaigns-summary.json" > "$RUN_DIR/account-health.json"
   echo "  account-health.json"
 fi
 
 # ─── 2. budget-actions.json ───────────────────────────────────────────────────
-if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
+if [[ -f "$RUN_DIR/_summaries/adsets-summary.json" ]]; then
   jq --slurpfile cfg "$CONFIG" --argjson top_maintain 3 '
 
     ($cfg[0].targets // {}) as $targets |
@@ -369,12 +369,12 @@ if [[ -f "$RUN_DIR/adsets-summary.json" ]]; then
           }
         }}
       ] | add // {}
-    )' "$RUN_DIR/adsets-summary.json" > "$RUN_DIR/budget-actions.json"
+    )' "$RUN_DIR/_summaries/adsets-summary.json" > "$RUN_DIR/budget-actions.json"
   echo "  budget-actions.json"
 fi
 
 # ─── 3. funnel.json ──────────────────────────────────────────────────────────
-if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
+if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
   jq '
     ([.[].objective] | unique | sort) as $objectives |
 
@@ -546,12 +546,12 @@ if [[ -f "$RUN_DIR/campaigns-summary.json" ]]; then
           end
         )}
       ] | add // {}
-    )' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/funnel.json"
+    )' "$RUN_DIR/_summaries/campaigns-summary.json" > "$RUN_DIR/funnel.json"
   echo "  funnel.json"
 fi
 
 # ─── 4. trends.json ──────────────────────────────────────────────────────────
-if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -f "$RUN_DIR/campaigns-summary.json" ]]; then
+if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
   jq --slurpfile recent "$RUN_DIR/_recent/campaigns-summary.json" '
 
     ([.[].objective] | unique | sort) as $objectives |
@@ -564,6 +564,11 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
     ($recent[0] | if length > 0 then .[0].date_start else null end) as $recent_start |
     ($recent[0] | if length > 0 then .[0].date_stop else null end) as $recent_stop |
 
+    # Guard: if period start == recent start, windows are identical — skip
+    if $period_start == $recent_start then
+      {available: false, reason: "period equals recent window"}
+    else
+
     {
       available: true,
       period: {start: $period_start, stop: $period_stop},
@@ -571,63 +576,88 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
       objectives_present: $objectives,
       campaigns: [
         .[] | select(.campaign_id != null) |
-        . as $period |
+        . as $full |
         ($recent_idx[.campaign_id] // null) as $r |
         if $r then
+          # Compute prior window: subtract recent additive metrics from full period
+          ({
+            spend: ([$full.spend - $r.spend, 0] | max),
+            impressions: ([$full.impressions - $r.impressions, 0] | max),
+            clicks: ([$full.clicks - $r.clicks, 0] | max),
+            reach: ([$full.reach - $r.reach, 0] | max),
+            purchases: ([$full.purchases - $r.purchases, 0] | max),
+            revenue: ([$full.revenue - $r.revenue, 0] | max),
+            link_clicks: ([$full.link_clicks - $r.link_clicks, 0] | max),
+            post_engagement: ([$full.post_engagement - $r.post_engagement, 0] | max),
+            lead: ([$full.lead - $r.lead, 0] | max),
+            app_install: ([$full.app_install - $r.app_install, 0] | max)
+          } |
+          # Recompute derived rates from prior-window bases
+          . + {
+            cpa: (if .purchases > 0 then (.spend / .purchases) else null end),
+            roas: (if .spend > 0 and .revenue > 0 then (.revenue / .spend) else 0 end),
+            link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100) else 0 end),
+            link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks) else null end),
+            cpm: (if .impressions > 0 then (.spend / .impressions * 1000) else 0 end),
+            cpe: (if .post_engagement > 0 then (.spend / .post_engagement) else null end),
+            cpl: (if .lead > 0 then (.spend / .lead) else null end),
+            cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
+            frequency: (if .reach > 0 then (.impressions / .reach) else 0 end)
+          }) as $prior |
           {
             campaign_name: .campaign_name,
             campaign_id: .campaign_id,
             objective: .objective,
-            period_spend: .spend,
+            prior_spend: $prior.spend,
             recent_spend: $r.spend,
             frequency_delta_pct: (
-              if .frequency > 0 and $r.frequency != null then
-                (($r.frequency - .frequency) / .frequency * 100 | round) else null end)
+              if $prior.frequency > 0 and $r.frequency != null then
+                (($r.frequency - $prior.frequency) / $prior.frequency * 100 | round) else null end)
           } +
-          # Objective-appropriate deltas
+          # Objective-appropriate deltas (comparing recent vs prior, not recent vs full period)
           if .objective == "OUTCOME_SALES" then {
-            period_cpa: .cpa,
+            prior_cpa: $prior.cpa,
             recent_cpa: $r.cpa,
-            period_roas: (.roas | . * 100 | round / 100),
+            prior_roas: ($prior.roas | . * 100 | round / 100),
             recent_roas: ($r.roas | . * 100 | round / 100),
-            cpa_delta_pct: (if .cpa != null and .cpa > 0 and $r.cpa != null then
-              (($r.cpa - .cpa) / .cpa * 100 | round) else null end),
-            roas_delta_pct: (if .roas > 0 and $r.roas != null then
-              (($r.roas - .roas) / .roas * 100 | round) else null end)
+            cpa_delta_pct: (if $prior.cpa != null and $prior.cpa > 0 and $r.cpa != null then
+              (($r.cpa - $prior.cpa) / $prior.cpa * 100 | round) else null end),
+            roas_delta_pct: (if $prior.roas > 0 and $r.roas != null then
+              (($r.roas - $prior.roas) / $prior.roas * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_TRAFFIC" then {
-            period_cpc: (if .link_click_cpc then (.link_click_cpc | . * 100 | round / 100) else null end),
+            prior_cpc: (if $prior.link_click_cpc then ($prior.link_click_cpc | . * 100 | round / 100) else null end),
             recent_cpc: (if $r.link_click_cpc then ($r.link_click_cpc | . * 100 | round / 100) else null end),
-            period_ctr: (.link_click_ctr | . * 100 | round / 100),
+            prior_ctr: ($prior.link_click_ctr | . * 100 | round / 100),
             recent_ctr: ($r.link_click_ctr | . * 100 | round / 100),
-            cpc_delta_pct: (if .link_click_cpc != null and .link_click_cpc > 0 and $r.link_click_cpc != null then
-              (($r.link_click_cpc - .link_click_cpc) / .link_click_cpc * 100 | round) else null end),
-            ctr_delta_pct: (if .link_click_ctr > 0 and $r.link_click_ctr != null then
-              (($r.link_click_ctr - .link_click_ctr) / .link_click_ctr * 100 | round) else null end)
+            cpc_delta_pct: (if $prior.link_click_cpc != null and $prior.link_click_cpc > 0 and $r.link_click_cpc != null then
+              (($r.link_click_cpc - $prior.link_click_cpc) / $prior.link_click_cpc * 100 | round) else null end),
+            ctr_delta_pct: (if $prior.link_click_ctr > 0 and $r.link_click_ctr != null then
+              (($r.link_click_ctr - $prior.link_click_ctr) / $prior.link_click_ctr * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_AWARENESS" then {
-            period_cpm: (.cpm | . * 100 | round / 100),
+            prior_cpm: ($prior.cpm | . * 100 | round / 100),
             recent_cpm: ($r.cpm | . * 100 | round / 100),
-            cpm_delta_pct: (if .cpm > 0 and $r.cpm != null then
-              (($r.cpm - .cpm) / .cpm * 100 | round) else null end)
+            cpm_delta_pct: (if $prior.cpm > 0 and $r.cpm != null then
+              (($r.cpm - $prior.cpm) / $prior.cpm * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_ENGAGEMENT" then {
-            period_cpe: (if .cpe then (.cpe | . * 100 | round / 100) else null end),
+            prior_cpe: (if $prior.cpe then ($prior.cpe | . * 100 | round / 100) else null end),
             recent_cpe: (if $r.cpe then ($r.cpe | . * 100 | round / 100) else null end),
-            cpe_delta_pct: (if .cpe != null and .cpe > 0 and $r.cpe != null then
-              (($r.cpe - .cpe) / .cpe * 100 | round) else null end)
+            cpe_delta_pct: (if $prior.cpe != null and $prior.cpe > 0 and $r.cpe != null then
+              (($r.cpe - $prior.cpe) / $prior.cpe * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_LEADS" then {
-            period_cpl: (if .cpl then (.cpl | . * 100 | round / 100) else null end),
+            prior_cpl: (if $prior.cpl then ($prior.cpl | . * 100 | round / 100) else null end),
             recent_cpl: (if $r.cpl then ($r.cpl | . * 100 | round / 100) else null end),
-            cpl_delta_pct: (if .cpl != null and .cpl > 0 and $r.cpl != null then
-              (($r.cpl - .cpl) / .cpl * 100 | round) else null end)
+            cpl_delta_pct: (if $prior.cpl != null and $prior.cpl > 0 and $r.cpl != null then
+              (($r.cpl - $prior.cpl) / $prior.cpl * 100 | round) else null end)
           }
           elif .objective == "OUTCOME_APP_PROMOTION" then {
-            period_cpi: (if .cpi then (.cpi | . * 100 | round / 100) else null end),
+            prior_cpi: (if $prior.cpi then ($prior.cpi | . * 100 | round / 100) else null end),
             recent_cpi: (if $r.cpi then ($r.cpi | . * 100 | round / 100) else null end),
-            cpi_delta_pct: (if .cpi != null and .cpi > 0 and $r.cpi != null then
-              (($r.cpi - .cpi) / .cpi * 100 | round) else null end)
+            cpi_delta_pct: (if $prior.cpi != null and $prior.cpi > 0 and $r.cpi != null then
+              (($r.cpi - $prior.cpi) / $prior.cpi * 100 | round) else null end)
           }
           else {} end |
 
@@ -655,7 +685,9 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
     } | . + {
       flagged: [.campaigns[] | select((.flags | length) > 0) |
         {campaign_name, objective, flags}]
-    }' "$RUN_DIR/campaigns-summary.json" > "$RUN_DIR/trends.json"
+    }
+
+    end' "$RUN_DIR/_summaries/campaigns-summary.json" > "$RUN_DIR/trends.json"
   echo "  trends.json"
 else
   echo '{"available": false, "reason": "no recent window data"}' > "$RUN_DIR/trends.json"
@@ -665,7 +697,7 @@ fi
 # ─── 5. creative-analysis.json + 6. creative-media.json ──────────────────────
 # Both use obj_meta for ranking. creative-analysis outputs agent-facing analysis;
 # creative-media outputs ad_id + URLs for analyze-creatives.sh.
-if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
+if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
   # Ensure creatives file exists for URL lookup (empty array fallback)
   CREATIVES_FILE="$RUN_DIR/_raw/creatives.json"
   if [[ ! -f "$CREATIVES_FILE" ]]; then
@@ -766,7 +798,7 @@ if [[ -f "$RUN_DIR/ads-summary.json" ]]; then
     )) as $media |
 
     {analysis: $analysis, media: $media}
-  ' "$RUN_DIR/ads-summary.json" > "$RUN_DIR/_creative_combined.json"
+  ' "$RUN_DIR/_summaries/ads-summary.json" > "$RUN_DIR/_creative_combined.json"
 
   # Split combined output into two files
   jq '.analysis' "$RUN_DIR/_creative_combined.json" > "$RUN_DIR/creative-analysis.json"
@@ -779,16 +811,40 @@ else
   echo "  creative-media.json (no creative data available)"
 fi
 
-# Report which output files were generated vs missing
+# Build pipeline-status.json — structured signal for agent consumer
 EXPECTED_FILES=(account-health.json budget-actions.json funnel.json trends.json creative-analysis.json creative-media.json)
-MISSING=()
+PRODUCED=()
+SKIPPED=()
 for f in "${EXPECTED_FILES[@]}"; do
-  if [[ ! -f "$RUN_DIR/$f" ]]; then
-    MISSING+=("$f")
+  if [[ -f "$RUN_DIR/$f" ]]; then
+    PRODUCED+=("$f")
+  else
+    SKIPPED+=("$f")
   fi
 done
-if [[ ${#MISSING[@]} -gt 0 ]]; then
-  echo "  WARNING: Missing output files: ${MISSING[*]}" >&2
+
+# Merge any pull-phase warnings
+PULL_WARNINGS_FILE="$RUN_DIR/_pull-warnings.json"
+if [[ -f "$PULL_WARNINGS_FILE" ]]; then
+  WARNINGS_JSON=$(cat "$PULL_WARNINGS_FILE")
+  rm -f "$PULL_WARNINGS_FILE"
+else
+  WARNINGS_JSON='[]'
 fi
 
-echo "Analysis preparation complete (${#EXPECTED_FILES[@]} expected, $((${#EXPECTED_FILES[@]} - ${#MISSING[@]})) generated)."
+STATUS="complete"
+if [[ ${#SKIPPED[@]} -gt 0 ]]; then
+  STATUS="partial"
+  echo "  WARNING: Missing output files: ${SKIPPED[*]}" >&2
+fi
+
+jq -n \
+  --arg status "$STATUS" \
+  --argjson produced "$(printf '%s\n' "${PRODUCED[@]}" | jq -R '[inputs]')" \
+  --argjson skipped "$(printf '%s\n' "${SKIPPED[@]}" 2>/dev/null | jq -R '[inputs]' 2>/dev/null || echo '[]')" \
+  --argjson warnings "$WARNINGS_JSON" \
+  '{status: $status, files_produced: $produced, files_skipped: $skipped, warnings: $warnings}' \
+  > "$RUN_DIR/pipeline-status.json"
+
+echo "  pipeline-status.json"
+echo "Analysis preparation complete (${#EXPECTED_FILES[@]} expected, ${#PRODUCED[@]} generated)."

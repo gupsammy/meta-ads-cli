@@ -62,7 +62,7 @@ Scripts normalize legacy objectives to OUTCOME_* equivalents via `references/obj
 - TOFU campaigns naturally have higher CPA — weight recommendations accordingly. A TOFU campaign classified as "reduce" may still be strategically valuable for pipeline building.
 - BOFU retargeting should have lower CPA and higher ROAS than TOFU. A BOFU campaign classified as "maintain" when it should be "scale" is a missed opportunity.
 - New campaigns (< 7 days) may be in learning phase — flag but don't recommend pausing. Meta's algorithm needs ~50 conversions to exit learning phase.
-- Budget values from the API are in minor currency units (cents/paisa) — divide by 100 for display.
+- Budget values from the API are in minor currency units (cents/paisa) — divide by 100 for display. Note: analysis files produced by prepare-analysis.sh are already converted to display units; do not double-convert.
 - The "refresh" classification means the creative or audience is fatigued, not that the campaign strategy is wrong. Recommend new creative variants or audience expansion, not budget cuts.
 - Cross-objective context: traffic campaigns feed awareness and sales funnels. Evaluate traffic CPC alongside downstream conversion rates, not in isolation.
 - Awareness campaigns with low CPM but high frequency may be saturating audiences — check frequency trend even when CPM is on target.

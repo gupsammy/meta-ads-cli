@@ -31,13 +31,15 @@ Scripts handle all data pulling, summarization, and computation. The pipeline pr
 ├── data/
 │   └── YYYY-MM-DD_HHMM/ # timestamped run (never overwritten)
 │       ├── _raw/          # raw API responses — NEVER read these
+│       ├── _summaries/    # intermediate summaries — NEVER read these
 │       ├── _recent/       # recent window summaries (for trends)
 │       ├── account-health.json     ── agent reads these 6 ──
 │       ├── budget-actions.json
 │       ├── funnel.json
 │       ├── trends.json
 │       ├── creative-analysis.json
-│       └── creative-media.json     # for analyze-creatives.sh only
+│       ├── creative-media.json     # for analyze-creatives.sh only
+│       └── pipeline-status.json    # check before reading analysis files
 ├── reports/
 └── creatives/
 ```
@@ -78,6 +80,8 @@ If ffmpeg is not available, the script logs "SKIPPED: ffmpeg/ffprobe not install
 If script fails (auth expired, network, missing account), report error and stop.
 
 Identify the run directory from script output (printed as "Run directory: ..."). All subsequent reads come from this directory.
+
+First, read `pipeline-status.json`. If `status` is `"partial"`, check `files_skipped` and `warnings` — report missing data to the user before proceeding. Only read files listed in `files_produced`.
 
 ### 3. Account Health
 

@@ -109,6 +109,11 @@ mkdir -p "$DATA_DIR"
 
 # Prevent concurrent runs from corrupting shared master files
 LOCKDIR="$DATA_DIR/.pull-lock"
+# Remove stale lock (>30 min old) — likely from a crashed previous run
+if [[ -d "$LOCKDIR" ]] && ! is_cache_fresh "$LOCKDIR" 1800; then
+  echo "Warning: Removing stale lock (>30 min old): $LOCKDIR" >&2
+  rmdir "$LOCKDIR" 2>/dev/null || rm -rf "$LOCKDIR"
+fi
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
   echo "Error: Another pull-data.sh instance is running (lockdir: $LOCKDIR)." >&2
   echo "  If this is stale, remove it: rmdir $LOCKDIR" >&2
@@ -203,10 +208,20 @@ if [[ ! -f "$RAW_DIR/campaigns-summary.json" ]]; then
   echo "Error: summarize-data.sh produced no campaigns-summary.json" >&2
   exit 1
 fi
-# Move summaries up to run dir (keep _raw/ clean)
-mv "$RAW_DIR"/campaigns-summary.json "$RUN_DIR/" 2>/dev/null || true
-mv "$RAW_DIR"/adsets-summary.json "$RUN_DIR/" 2>/dev/null || true
-mv "$RAW_DIR"/ads-summary.json "$RUN_DIR/" 2>/dev/null || true
+# Move summaries to _summaries/ subdir (keep _raw/ clean)
+PULL_WARNINGS=()
+mkdir -p "$RUN_DIR/_summaries"
+mv "$RAW_DIR"/campaigns-summary.json "$RUN_DIR/_summaries/"
+if [[ -f "$RAW_DIR/adsets-summary.json" ]]; then
+  mv "$RAW_DIR"/adsets-summary.json "$RUN_DIR/_summaries/"
+else
+  PULL_WARNINGS+=("adsets-summary.json missing — adset-level analysis will be skipped")
+fi
+if [[ -f "$RAW_DIR/ads-summary.json" ]]; then
+  mv "$RAW_DIR"/ads-summary.json "$RUN_DIR/_summaries/"
+else
+  PULL_WARNINGS+=("ads-summary.json missing — ad-level and creative analysis will be skipped")
+fi
 
 # Pull recent window (last_7d) for trend comparison
 if [[ "$DATE_PRESET" != "last_7d" ]]; then
@@ -236,7 +251,12 @@ if [[ "$DATE_PRESET" != "last_7d" ]]; then
   rm -rf "$RECENT_RAW"
 fi
 
-# Run prepare-analysis.sh → 6 agent-ready files
+# Write pull warnings for pipeline-status.json
+if [[ ${#PULL_WARNINGS[@]} -gt 0 ]]; then
+  printf '%s\n' "${PULL_WARNINGS[@]}" | jq -R '[inputs]' > "$RUN_DIR/_pull-warnings.json"
+fi
+
+# Run prepare-analysis.sh → 6 agent-ready files + pipeline-status.json
 echo "  Preparing analysis files..."
 bash "$SCRIPT_DIR/prepare-analysis.sh" "$RUN_DIR"
 

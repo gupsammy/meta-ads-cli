@@ -15,6 +15,9 @@ umask 077
 # Usage: analyze-creatives.sh [input-file]
 #        Default input: auto-detected from latest run directory
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/http-helpers.sh"
+
 export DATA_DIR="${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}"
 export CREATIVES_DIR="$(dirname "${META_ADS_DATA_DIR:-$HOME/.meta-ads-intel/data}")/creatives"
 CREATIVES_MASTER="$DATA_DIR/creatives-master.json"
@@ -103,7 +106,7 @@ while IFS=$'\t' read -r RAW_AD_ID AD_NAME RANK; do
   fi
 
   # Fetch creative details from Meta API
-  CREATIVE_JSON=$(curl -s -H "Authorization: Bearer $TOKEN" "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url")
+  CREATIVE_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$CREATIVE_ID?fields=object_story_spec,thumbnail_url,image_url" -H "Authorization: Bearer $TOKEN")
 
   # Check for API errors
   API_ERROR=$(echo "$CREATIVE_JSON" | jq -r '.error.message // empty')
@@ -120,7 +123,7 @@ while IFS=$'\t' read -r RAW_AD_ID AD_NAME RANK; do
 
   if [[ -n "$VIDEO_ID" ]]; then
     # === VIDEO AD ===
-    VIDEO_JSON=$(curl -s -H "Authorization: Bearer $TOKEN" "https://graph.facebook.com/$API_VERSION/$VIDEO_ID?fields=source,length")
+    VIDEO_JSON=$(fetch_with_retry "https://graph.facebook.com/$API_VERSION/$VIDEO_ID?fields=source,length" -H "Authorization: Bearer $TOKEN")
 
     SOURCE_URL=$(echo "$VIDEO_JSON" | jq -r '.source // empty')
     DURATION=$(echo "$VIDEO_JSON" | jq -r '.length // 0')

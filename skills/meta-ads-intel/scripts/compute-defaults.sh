@@ -8,6 +8,8 @@ set -euo pipefail
 # Requires: meta-ads CLI, jq
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/jq-defs.sh
+. "$SCRIPT_DIR/lib/jq-defs.sh"
 OBJ_MAP="$SCRIPT_DIR/../references/objective-map.json"
 ACCOUNT_ID="${1:?Usage: compute-defaults.sh <account_id> [campaigns-meta.json]}"
 CAMPAIGNS_META_FILE="${2:-}"
@@ -39,10 +41,7 @@ RAW=$("$CLI" insights get \
   -o json)
 
 # Join with objectives, group by objective, compute per-objective KPIs
-echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" '
-  # Reusable defs (see summarize-data.sh for canonical definitions)
-  def attr_guard: (. // []) as $raw | ($raw | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw else . end;
-  def omni_first($types): [.[] | select(.action_type as $t | $types | index($t) != null)] | sort_by(.action_type as $t | $types | index($t)) | .[0].value // "0" | tonumber;
+echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" "$JQ_DEFS"'
   [(.data // .)[] |
     ((.campaign_id // "") | tostring) as $cid |
     (.actions | attr_guard) as $actions |

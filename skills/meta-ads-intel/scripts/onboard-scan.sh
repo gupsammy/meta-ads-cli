@@ -9,6 +9,8 @@ set -euo pipefail
 # Requires: meta-ads CLI, jq
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/jq-defs.sh
+. "$SCRIPT_DIR/lib/jq-defs.sh"
 OBJ_MAP="$SCRIPT_DIR/../references/objective-map.json"
 ACCOUNT_ID="${1:?Usage: onboard-scan.sh <account_id>}"
 CLI="${META_ADS_CLI:-meta-ads}"
@@ -48,10 +50,7 @@ OBJ_LOOKUP=$(echo "$CAMPAIGNS_META" | jq --slurpfile omap "$OBJ_MAP" '
   )' 2>/dev/null || echo '{}')
 
 # 5. Join insights with creative data + objective + compute metrics
-JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson obj "$OBJ_LOOKUP" '
-  # Reusable defs (see summarize-data.sh for canonical definitions)
-  def attr_guard: (. // []) as $raw | ($raw | map(select(has("action_attribution_window") | not))) | if length == 0 then $raw else . end;
-  def omni_first($types): [.[] | select(.action_type as $t | $types | index($t) != null)] | sort_by(.action_type as $t | $types | index($t)) | .[0].value // "0" | tonumber;
+JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson obj "$OBJ_LOOKUP" "$JQ_DEFS"'
   [(.data // .)[] |
   ((.ad_id // "") | tostring) as $aid |
   ((.campaign_id // "") | tostring) as $cid |
