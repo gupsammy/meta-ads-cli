@@ -58,7 +58,7 @@ warn_if_truncated() {
 # TTL-based cache check: is_cache_fresh <file> <max_age_seconds>
 is_cache_fresh() {
   local file="$1" max_age="$2"
-  [[ ! -f "$file" ]] && return 1
+  [[ ! -e "$file" ]] && return 1
   local mtime now age
   # macOS stat vs GNU stat
   if stat -f %m "$file" &>/dev/null; then

@@ -55,7 +55,7 @@ if [[ "$CONFIG_VER" -lt 2 ]]; then
 fi
 
 # Load shared config values (single jq call)
-read -r TOP_N BOTTOM_N ZERO_N ACCOUNT_NAME CURRENCY PRIMARY_OBJ < <(
+IFS=$'\t' read -r TOP_N BOTTOM_N ZERO_N ACCOUNT_NAME CURRENCY PRIMARY_OBJ < <(
   jq -r '[
     (.analysis.top_n // 15),
     (.analysis.bottom_n // 10),
