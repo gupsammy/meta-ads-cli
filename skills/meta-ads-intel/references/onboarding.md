@@ -6,9 +6,7 @@ Onboarding is its own session. Do NOT continue to analysis after onboarding comp
 
 During onboarding, present numbers in context ("Your CPA is Rs 1,104") but do not draw conclusions ("This is high/low/concerning") or make recommendations ("You should reduce spend on X"). Save all performance judgments for analysis mode.
 
-When asking questions: use AskUserQuestion tool if available (minimum 2 options required). Otherwise, ask conversationally.
-
-AskUserQuestion rule: every call must include the suggested value, an alternative path ("I'd specify differently" / "Other"), and optionally a help option. Never use simple yes/no confirmation — always give the user a path to provide their own value.
+When asking questions: use AskUserQuestion tool if available (minimum 2 options required). The tool automatically provides an "Other" free-text option to users — do not add one explicitly. Focus on providing a suggested value and a meaningful alternative (e.g., "I'd specify differently", "Help me decide"). Never use simple yes/no confirmation.
 
 ## Phase 1: Install & Setup
 
@@ -84,7 +82,6 @@ Ask via AskUserQuestion: "What is your website or store URL?"
 Options:
 - The actual domain if known from context (e.g., "maisonx.in")
 - "I don't have a website"
-- Other (free text)
 
 If URL provided — run a comprehensive site review. Do NOT just scrape the homepage; most e-commerce sites need deeper crawling (collection pages, product pages, about page, sitemap).
 
