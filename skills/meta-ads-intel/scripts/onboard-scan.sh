@@ -26,7 +26,7 @@ INSIGHTS=$("$CLI" insights get \
   --account-id "$ACCOUNT_ID" \
   --date-preset last_14d \
   --level ad \
-  --limit 50 \
+  --limit 200 \
   -o json)
 
 # 2. Pull ads with creative fields (higher limit to cover all insights ads)
@@ -91,7 +91,7 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
     link_click_ctr: (if .impressions > 0 then (.link_clicks / .impressions * 100 | . * 100 | round / 100) else 0 end),
     link_click_cpc: (if .link_clicks > 0 then (.spend / .link_clicks | . * 100 | round / 100) else null end),
-    format: (if .has_thumbnail then "video" elif .has_image then "image" elif (.creative_body != "" or .creative_title != "") then "static" else "unknown" end)
+    format: (if .has_thumbnail then "video" elif .has_image then "image" else "unknown" end)
   }
 ]')
 
@@ -140,10 +140,9 @@ echo "$JOINED" | jq '
     format_breakdown: (
       ([.[] | select(.format == "video")] | length) as $v |
       ([.[] | select(.format == "image")] | length) as $i |
-      ([.[] | select(.format == "static")] | length) as $s |
       ([.[] | select(.format == "unknown")] | length) as $u |
-      { video: $v, image: $i, static: $s, unknown: $u,
-        confidence: (if length > 0 and ($u / length > 0.3) then "low" else "high" end) }
+      { video: $v, image: $i, unknown: $u,
+        confidence: (if length == 0 then "n/a" elif ($u / length > 0.3) then "low" else "high" end) }
     ),
     objectives_detected: $objectives,
     total_ads: length
