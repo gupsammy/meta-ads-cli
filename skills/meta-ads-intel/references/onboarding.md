@@ -155,6 +155,7 @@ Present all per-objective current metrics from compute-defaults.sh in a summary 
 
 "Here's your current performance across objectives:
 | Objective | Spend % | Key Metrics |
+| --- | --- | --- |
 | Sales | 97% | CPA Rs 1,104 · ROAS 3.07x |
 | Traffic | 2.6% | CPC Rs 0.85 · CTR 0.57% |
 | Awareness | 0.2% | CPM Rs 6.03 · Freq 1.2 |"

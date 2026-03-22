@@ -176,7 +176,7 @@ For the primary objective (and any other objective with significant spend):
 
 ### 8. Decision Brief
 
-**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the most recent one and compute deltas for primary objective KPIs (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health.
+**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the most recent one (sort by filename descending — filenames embed ISO date) and compute deltas for primary objective KPIs (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health.
 
 Synthesize all analysis into:
 
