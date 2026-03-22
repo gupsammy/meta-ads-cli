@@ -96,7 +96,7 @@ echo "$RAW" | jq --argjson obj "$OBJ_LOOKUP" "$JQ_DEFS"'
         link_clicks: $lc,
         landing_page_views: $lpv,
         current_cpc: (if $lc > 0 then ($spend / $lc | . * 100 | round / 100) else null end),
-        current_ctr: (if $imp > 0 then ($lc / $imp * 100 | . * 100 | round / 100) else null end)
+        current_link_ctr: (if $imp > 0 then ($lc / $imp * 100 | . * 100 | round / 100) else null end)
       }
     elif $obj == "OUTCOME_AWARENESS" then
       (map(.impressions) | add // 0) as $imp |

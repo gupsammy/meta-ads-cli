@@ -4,7 +4,9 @@ Triggered when Step 0 detects no `~/.meta-ads-intel/config.json`. Six phases: in
 
 Onboarding is its own session. Do NOT continue to analysis after onboarding completes. The user runs /meta-ads-intel again for their first analysis.
 
-When asking questions: use AskUserQuestion tool if available. Otherwise, ask conversationally.
+During onboarding, present numbers in context ("Your CPA is Rs 1,104") but do not draw conclusions ("This is high/low/concerning") or make recommendations ("You should reduce spend on X"). Save all performance judgments for analysis mode.
+
+When asking questions: use AskUserQuestion tool if available (minimum 2 options required). The tool automatically provides an "Other" free-text option to users — do not add one explicitly. Focus on providing a suggested value and a meaningful alternative (e.g., "I'd specify differently", "Help me decide"). Never use simple yes/no confirmation.
 
 ## Phase 1: Install & Setup
 
@@ -24,37 +26,27 @@ If ffmpeg missing: note "ffmpeg not installed — visual creative analysis will 
 
 ### Authentication
 
-Non-interactive shell environments cannot prompt for stdin — `meta-ads setup` without flags will fail. Use the non-interactive flow:
+Non-interactive shell environments cannot prompt for stdin — `meta-ads setup` without flags will fail. Use the non-interactive checkpoint flow. Each checkpoint is a verification gate — do not skip any.
 
 1. Ask the user for their Meta API access token (via AskUserQuestion).
-2. Run setup with `--non-interactive`:
+2. Save token without selecting account:
 ```bash
 meta-ads setup --non-interactive --token "<token>" --skip-account
 ```
-3. List accounts to find the right one:
+3. **Checkpoint: Auth verified.** Run `meta-ads auth status -o json`. Confirm output shows a valid token. If auth fails (expired token, missing scopes), stop and ask for a new token. Do not proceed without passing this checkpoint.
+4. Discover accounts:
 ```bash
 meta-ads accounts list -o json
 ```
-4. Set the default account:
+5. Set the default account:
 ```bash
 meta-ads setup --non-interactive --token "<token>" --account-id "<account_id>"
 ```
-5. Verify:
-```bash
-meta-ads auth status -o json
-```
+6. **Checkpoint: Account confirmed.** Run `meta-ads accounts get --account-id <account_id> -o json`. Confirm it returns account name and currency. Store both for Phase 6.
 
 ## Phase 2: Account Discovery
 
-Read account from CLI config (always use the `act_` prefixed form — e.g., `act_903322579535495`):
-```bash
-jq -r '.defaults.account_id' ~/.config/meta-ads-cli/config.json
-```
-
-Fetch account name and currency:
-```bash
-meta-ads accounts get --account-id <account_id> -o json
-```
+Account ID, name, and currency are already confirmed from Phase 1 checkpoints. Use the `act_` prefixed form (e.g., `act_903322579535495`).
 
 Pull campaigns-meta for objective detection (reused by compute-defaults.sh):
 ```bash
@@ -90,7 +82,6 @@ Ask via AskUserQuestion: "What is your website or store URL?"
 Options:
 - The actual domain if known from context (e.g., "maisonx.in")
 - "I don't have a website"
-- Other (free text)
 
 If URL provided — run a comprehensive site review. Do NOT just scrape the homepage; most e-commerce sites need deeper crawling (collection pages, product pages, about page, sitemap).
 
@@ -138,9 +129,10 @@ bash <skill-dir>/scripts/onboard-scan.sh <account_id>
 Read the JSON output. Three scenarios:
 
 **Scenario A: ads_with_conversions > 0** (most common)
-- Read the `winners` array — identify common patterns in creative_body/creative_title:
-  - What hooks do top ads use? (urgency, social proof, sensory, discount, etc.)
-  - What format dominates winners? (video vs image from format_breakdown)
+- Analyze the top 5 winners by primary KPI. For each, note: format (video/image/static), whether creative_body is present, and the opening hook angle if copy exists. Summarize as a structured list, not prose.
+- If >80% of winners have empty creative_body, note "video-first account — copy analysis limited to titles and ads with body text."
+- What format dominates winners? (video vs image vs static from format_breakdown)
+- If `format_breakdown.confidence` is `"low"`, caveat format insights: "Format detection is approximate — some ads could not be classified."
 - Read the `losers` array — identify what losers have in common that winners lack
 - Set:
   - Proven hook angles = patterns from winner copy
@@ -157,15 +149,29 @@ Read the JSON output. Three scenarios:
 
 ## Phase 5: Target Setting
 
-For each detected objective above the 5% spend threshold, ask for the relevant targets. Batch objectives into as few AskUserQuestion calls as reasonable (group by topic, max 4 questions per call).
+### Summary-first approach
 
-### Per-objective targets
+Present all per-objective current metrics from compute-defaults.sh in a summary table:
+
+"Here's your current performance across objectives:
+| Objective | Spend % | Key Metrics |
+| --- | --- | --- |
+| Sales | 97% | CPA Rs 1,104 · ROAS 3.07x |
+| Traffic | 2.6% | CPC Rs 0.85 · CTR 0.57% |
+| Awareness | 0.2% | CPM Rs 6.03 · Freq 1.2 |"
+
+Then ask one AskUserQuestion: "I'll use current performance as baseline targets for objectives above 5% of spend, and auto-set defaults for the rest. Which would you like to customize?"
+Options: "Use current values as targets (Recommended)", "I want to set custom targets for specific objectives", "Help me understand these metrics"
+
+If user selects custom targets, expand into per-metric questions only for the objectives they want to customize:
 
 **OUTCOME_SALES**: "Your sales CPA is [current_cpa]. What is your target CPA?" + "Your sales ROAS is [current_roas]. Target ROAS?"
 
-**OUTCOME_TRAFFIC**: "Your traffic CPC is [current_cpc]. Target CPC?" + "Your CTR is [current_ctr]%. Target CTR?"
+**OUTCOME_TRAFFIC**: "Your traffic CPC is [current_cpc]. Target CPC?" + "Your link-click CTR is [current_link_ctr]%. Target CTR?"
 
 **OUTCOME_AWARENESS**: "Your CPM is [current_cpm]. Target CPM?" + "Target max frequency for awareness? (default 3.0)"
+
+**OUTCOME_AWARENESS (VIDEO_VIEWS campaigns)**: If compute-defaults.sh returned `current_cpv`, also offer: "Your cost per video view is [current_cpv]. Set a CPV target? (Optional — CPM is the primary awareness metric.)"
 
 **OUTCOME_ENGAGEMENT**: "Your cost per engagement is [current_cpe]. Target CPE?"
 
@@ -181,6 +187,17 @@ For each detected objective above the 5% spend threshold, ask for the relevant t
 For objectives below 5% spend threshold: use sensible defaults and note "Your [objective] campaigns are <5% of spend — using default [metric] target. Update in config.json anytime."
 
 If compute-defaults.sh returned null for a metric (zero conversions): note "No [conversion type] data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
+
+### Default Disclosure
+
+After collecting all user-set targets, explicitly list all auto-assigned defaults for sub-5% objectives before writing config:
+
+"For objectives below 5% of spend, I'm using these defaults:
+- [objective] ([spend%]): [metric] = [value], [metric] = [value]
+...
+You can update these anytime in ~/.meta-ads-intel/config.json."
+
+This ensures the user knows exactly what baseline their campaigns will be judged against.
 
 ## Phase 6: Write Configuration
 
@@ -219,7 +236,7 @@ Only include objectives detected in the account. Per-objective target keys:
 - OUTCOME_SALES: `cpa`, `roas`
 - OUTCOME_TRAFFIC: `cpc`, `ctr`
 - OUTCOME_AWARENESS: `cpm`, `max_frequency`
-- OUTCOME_ENGAGEMENT: `cpe`, `engagement_rate`
+- OUTCOME_ENGAGEMENT: `cpe`
 - OUTCOME_LEADS: `cpl`
 - OUTCOME_APP_PROMOTION: `cpi`
 
@@ -255,3 +272,25 @@ Print summary:
 Final line: **"Setup complete. Run /meta-ads-intel again to start your first analysis."**
 
 STOP HERE. Do not proceed to any analysis steps.
+
+---
+
+## Reconfigure Mode
+
+Triggered by `/meta-ads-intel reconfigure` when config.json already exists. Allows selective updates without full re-onboarding.
+
+Read existing `~/.meta-ads-intel/config.json` and `~/.meta-ads-intel/brand-context.md`.
+
+Ask via AskUserQuestion: "What would you like to update?"
+Options:
+- "Update targets" — re-run compute-defaults.sh for fresh current metrics, then go through Phase 5 (summary-first target setting)
+- "Update brand context" — re-run Phase 3 (website + brand questions) and Phase 4 (creative scan)
+- "Full re-onboarding" — wipe config and start from Phase 1
+
+For target updates: preserve account_id, currency, objectives_detected. Only rewrite the `targets` section of config.json.
+
+For brand context updates: preserve config.json entirely. Only rewrite brand-context.md.
+
+For full re-onboarding: delete config.json and follow the standard onboarding flow from Phase 1.
+
+After any update, print a summary of what changed and confirm: "Config updated. Run /meta-ads-intel to start analysis."

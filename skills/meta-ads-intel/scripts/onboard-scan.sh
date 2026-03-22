@@ -26,13 +26,13 @@ INSIGHTS=$("$CLI" insights get \
   --account-id "$ACCOUNT_ID" \
   --date-preset last_14d \
   --level ad \
-  --limit 50 \
+  --limit 200 \
   -o json)
 
-# 2. Pull ads with creative fields
+# 2. Pull ads with creative fields (higher limit to cover all insights ads)
 ADS=$("$CLI" ads list \
   --account-id "$ACCOUNT_ID" \
-  --limit 50 \
+  --limit 200 \
   -o json)
 
 # 3. Build creative lookup: ad_id -> body, title, image_url, thumbnail_url
@@ -68,6 +68,7 @@ JOINED=$(echo "$INSIGHTS" | jq --argjson creatives "$CREATIVE_LOOKUP" --argjson 
     objective: ($obj[$cid] // "UNKNOWN"),
     spend: ((.spend // "0") | tonumber),
     impressions: ((.impressions // "0") | tonumber),
+    reach: ((.reach // "0") | tonumber),
     cpc: ((.cpc // "0") | tonumber),
     ctr: ((.ctr // "0") | tonumber),
     cpm: ((.cpm // "0") | tonumber),
@@ -136,11 +137,13 @@ echo "$JOINED" | jq '
         }}
       ] | add // {}
     ),
-    format_breakdown: {
-      video: [.[] | select(.format == "video")] | length,
-      image: [.[] | select(.format == "image")] | length,
-      unknown: [.[] | select(.format == "unknown")] | length
-    },
+    format_breakdown: (
+      ([.[] | select(.format == "video")] | length) as $v |
+      ([.[] | select(.format == "image")] | length) as $i |
+      ([.[] | select(.format == "unknown")] | length) as $u |
+      { video: $v, image: $i, unknown: $u,
+        confidence: (if length == 0 then "n/a" elif ($u / length > 0.3) then "low" else "high" end) }
+    ),
     objectives_detected: $objectives,
     total_ads: length
   }'
