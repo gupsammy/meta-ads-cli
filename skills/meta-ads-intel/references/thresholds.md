@@ -25,16 +25,16 @@ Primary KPIs: CPC, CTR. Targets from `targets.OUTCOME_TRAFFIC.{cpc, ctr}`.
 - Pause: zero link clicks despite spend
 
 ### OUTCOME_AWARENESS
-Primary KPIs: CPM, CPV (for video campaigns). Targets from `targets.OUTCOME_AWARENESS.{cpm, cpv, max_frequency}`.
-- Scale: CPM < target x 0.8 (or CPV < target x 0.8 for video campaigns when no CPM target)
-- Maintain: within 20% of target CPM or CPV
-- Reduce: CPM > target x 1.2 (or CPV > target x 1.2 for video campaigns when no CPM target)
+Primary KPIs: CPM. Optional secondary: CPV (for VIDEO_VIEWS campaigns). Targets from `targets.OUTCOME_AWARENESS.{cpm, max_frequency}`.
+- Scale: CPM < target x 0.8
+- Maintain: within 20% of target CPM
+- Reduce: CPM > target x 1.2
 - Pause: zero impressions (rare)
 - Refresh threshold: uses awareness-specific max_frequency (typically lower, e.g., 3.0)
-- CPV (cost per view): evaluated as secondary KPI when CPM target is not set but CPV target exists. VIDEO_VIEWS campaigns get credit for view efficiency via this path.
+- CPV (cost per view): optional secondary KPI for VIDEO_VIEWS campaigns. Computed by compute-defaults.sh and offered as an optional target during onboarding. If `cpv` target is set in config, also evaluate CPV thresholds alongside CPM. If no CPV target is set, CPM-only classification applies.
 
 ### OUTCOME_ENGAGEMENT
-Primary KPIs: CPE. Targets from `targets.OUTCOME_ENGAGEMENT.{cpe, engagement_rate}`.
+Primary KPIs: CPE. Targets from `targets.OUTCOME_ENGAGEMENT.{cpe}`. Note: `engagement_rate` (post_engagement/impressions) is computed at analysis time for reporting — it is not a config target.
 - Scale: CPE < target x 0.8
 - Maintain: within 20% of target CPE
 - Reduce: CPE > target x 1.2

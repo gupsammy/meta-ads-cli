@@ -56,6 +56,9 @@ jq -e '.account_id' ~/.meta-ads-intel/config.json 2>/dev/null
 **ONBOARDING MODE** (config missing or invalid):
 Read `references/onboarding.md` and follow that flow completely. Onboarding is a dedicated session — it installs the CLI, collects brand context, auto-detects objectives, runs a creative scan, sets per-objective targets, and writes config.json v2. When onboarding says "Setup complete" — STOP. Do NOT continue to Step 1. The user runs /meta-ads-intel again for their first analysis.
 
+**RECONFIGURE MODE** (`$ARGUMENTS` contains "reconfigure"):
+Config exists but user wants to update settings. Read `references/onboarding.md` → "Reconfigure Mode" section. This allows selective updates (targets, brand context, or full re-onboarding) without repeating install/auth. When reconfigure says "Config updated" — STOP.
+
 **ANALYSIS MODE** (config exists and valid):
 Proceed to Step 1.
 
@@ -173,9 +176,11 @@ For the primary objective (and any other objective with significant spend):
 
 ### 8. Decision Brief
 
+**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the most recent one and compute deltas for primary objective KPIs (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health.
+
 Synthesize all analysis into:
 
-- Account Health: total spend, per-objective spend breakdown, primary objective KPIs vs targets
+- Account Health: total spend, per-objective spend breakdown, primary objective KPIs vs targets (+ vs. last analysis if available)
 - Trends: period vs recent scorecard per objective, biggest movers
 - Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Prioritize the primary objective but include cross-objective synergies (e.g., "traffic campaign X is feeding sales funnel Y")
 - Risks: fatigue signals, underperforming spend, drifting campaigns across all objectives
@@ -189,6 +194,8 @@ Write to `~/.meta-ads-intel/reports/`:
 2. `data-{YYYY-MM-DD}.json` — structured JSON (account health, funnel, budget actions, trends, creative rankings, recommendations)
 
 Return concise summary: account health headline, top 3 actions, report paths.
+
+If this is the user's first analysis, suggest weekly scheduling: "For automated weekly analysis, set up a system scheduler. On macOS: a launchd plist at `~/Library/LaunchAgents/com.meta-ads-intel.weekly.plist` that runs `claude -p '/meta-ads-intel'`. On Linux: a crontab entry. Requires Claude Code CLI on PATH." Offer to create the plist/crontab if the user is interested.
 
 ## Rules
 
