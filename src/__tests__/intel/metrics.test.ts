@@ -114,6 +114,14 @@ describe('omniFirst', () => {
     expect(omniFirst(actions, ['omni_purchase', 'purchase'])).toBe(7);
   });
 
+  it('picks first-encountered when duplicate action_types exist', () => {
+    const actions: ActionEntry[] = [
+      { action_type: 'purchase', value: '3' },
+      { action_type: 'purchase', value: '7' },
+    ];
+    expect(omniFirst(actions, ['purchase'])).toBe(3);
+  });
+
   it('handles numeric value type', () => {
     const actions: ActionEntry[] = [
       { action_type: 'purchase', value: 9 },
@@ -238,6 +246,25 @@ describe('extractMetrics', () => {
     expect(result.link_clicks).toBe(0);
     expect(result.revenue).toBe(0);
   });
+
+  it('filters attribution-window duplicates from action_values', () => {
+    const row: InsightsRow = {
+      action_values: [
+        { action_type: 'omni_purchase', value: '500' },
+        { action_type: 'omni_purchase', value: '200', action_attribution_window: '7d_click' },
+      ],
+    };
+    expect(extractMetrics(row).revenue).toBe(500);
+  });
+
+  it('handles zero-value action entries', () => {
+    const row: InsightsRow = {
+      actions: [
+        { action_type: 'purchase', value: '0' },
+      ],
+    };
+    expect(extractMetrics(row).purchases).toBe(0);
+  });
 });
 
 describe('addDerived', () => {
@@ -254,7 +281,7 @@ describe('addDerived', () => {
     const result = addDerived(base);
     expect(result.cpa).toBe(20);
     expect(result.cpe).toBe(2.5);
-    expect(result.cpl).toBeCloseTo(33.33, 1);
+    expect(result.cpl).toBe(100 / 3);
     expect(result.cpi).toBe(50);
     expect(result.link_click_ctr).toBe(0.8);
     expect(result.link_click_cpc).toBe(1.25);
