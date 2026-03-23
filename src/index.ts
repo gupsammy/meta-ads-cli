@@ -13,6 +13,7 @@ import { registerAudiencesCommands } from './commands/audiences.js';
 import { registerSetupCommand } from './commands/setup.js';
 import { registerUpdateCommand } from './commands/update.js';
 import { registerUninstallCommand } from './commands/uninstall.js';
+import { registerIntelCommands } from './intel/index.js';
 
 const program = new Command();
 
@@ -38,5 +39,6 @@ registerAudiencesCommands(program);
 registerSetupCommand(program);
 registerUpdateCommand(program);
 registerUninstallCommand(program);
+registerIntelCommands(program);
 
 program.parse();
