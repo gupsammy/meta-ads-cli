@@ -67,3 +67,36 @@ Scripts normalize legacy objectives to OUTCOME_* equivalents via `references/obj
 - The "refresh" classification means the creative or audience is fatigued, not that the campaign strategy is wrong. Recommend new creative variants or audience expansion, not budget cuts.
 - Cross-objective context: traffic campaigns feed awareness and sales funnels. Evaluate traffic CPC alongside downstream conversion rates, not in isolation.
 - Awareness campaigns with low CPM but high frequency may be saturating audiences — check frequency trend even when CPM is on target.
+- Trends use subtraction (full - recent = prior). Delayed attribution can cause recent conversions from prior-window clicks, slightly inflating recent ROAS/CPA.
+
+## Funnel Expected Rates
+
+Configurable in `config.json` under `funnel_expected_rates`. These are general e-commerce benchmarks — industry defaults. If not set in config, prepare-analysis.sh uses these hardcoded fallbacks.
+
+### OUTCOME_SALES (full 7-stage purchase funnel)
+- Click rate (impression → click): 3.0%
+- Landing rate (click → landing page): 70.0%
+- Add to cart rate (landing → cart): 8.0%
+- Cart to checkout: 50.0%
+- Checkout to purchase: 60.0%
+
+### OUTCOME_TRAFFIC (3-stage)
+- Click rate: 1.5%
+- Landing rate: 70.0%
+
+### OUTCOME_ENGAGEMENT (3-stage)
+- Engagement rate (impression → engagement): 2.0%
+- Deep engagement rate (engagement → page engagement): 15.0%
+
+### OUTCOME_LEADS (4-stage)
+- Click rate: 2.0%
+- Landing rate: 60.0%
+- Lead conversion rate: 5.0%
+
+### OUTCOME_APP_PROMOTION (3-stage)
+- Click rate: 1.5%
+- Install rate: 5.0%
+
+### Market-specific notes
+- Indian market may need lower BOFU rates (35-45% cart-to-checkout, 40-50% checkout-to-purchase) due to COD prevalence and payment friction.
+- Instagram traffic may need lower landing rates (30-50%) due to in-app browsing behavior reducing clickthrough to external pages.

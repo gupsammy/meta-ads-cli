@@ -184,6 +184,24 @@ If user selects custom targets, expand into per-metric questions only for the ob
 1. Max Frequency — "Default is 5.0 (above this = audience saturation). Keep default or adjust?"
 2. Min Spend Threshold — "Minimum spend to include an ad set in recommendations. Filters noise." Suggest sensible default based on currency (1000 for INR, 10 for USD/EUR).
 
+### Funnel benchmarks
+
+Present the funnel benchmarks that will be used for bottleneck detection:
+
+"I'll use these funnel benchmarks for bottleneck detection during analysis:
+| Stage | Expected Rate |
+| --- | --- |
+| Click → Landing | 70% |
+| Landing → Add to Cart | 8% |
+| Cart → Checkout | 50% |
+| Checkout → Purchase | 60% |
+These are general e-commerce defaults. For luxury, B2B, or non-standard funnels, you may want to adjust."
+
+AskUserQuestion: "Use these funnel benchmarks?"
+Options: "Use defaults (Recommended)", "I want to customize"
+
+If the user selects "I want to customize", show per-stage questions for the primary objective only. For non-primary objectives, use defaults. Write the resulting rates into config.json under `funnel_expected_rates` (see Phase 6 schema). Only include objectives detected in the account.
+
 For objectives below 5% spend threshold: use sensible defaults and note "Your [objective] campaigns are <5% of spend — using default [metric] target. Update in config.json anytime."
 
 If compute-defaults.sh returned null for a metric (zero conversions): note "No [conversion type] data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
@@ -228,6 +246,27 @@ Write `~/.meta-ads-intel/config.json`:
     "top_n": 15,
     "bottom_n": 10,
     "zero_conversion_n": 10
+  },
+  "funnel_expected_rates": {
+    "OUTCOME_SALES": {
+      "click_rate": 3.0, "landing_rate": 70.0,
+      "add_to_cart_rate": 8.0, "cart_to_checkout": 50.0,
+      "checkout_to_purchase": 60.0
+    },
+    "OUTCOME_TRAFFIC": {
+      "click_rate": 1.5, "landing_rate": 70.0
+    },
+    "OUTCOME_AWARENESS": {},
+    "OUTCOME_ENGAGEMENT": {
+      "engagement_rate": 2.0, "deep_engagement_rate": 15.0
+    },
+    "OUTCOME_LEADS": {
+      "click_rate": 2.0, "landing_rate": 60.0,
+      "lead_conversion_rate": 5.0
+    },
+    "OUTCOME_APP_PROMOTION": {
+      "click_rate": 1.5, "install_rate": 5.0
+    }
   }
 }
 ```

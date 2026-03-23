@@ -84,6 +84,12 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
     . as $all |
     ([.[].objective] | unique | sort) as $objectives |
 
+    # Validate primary_objective: if not in data, fall back to highest-spend objective
+    (if ($objectives | index($primary)) then $primary
+     else ([$all[] | {obj: .objective, s: .spend}] | group_by(.obj) |
+       map({obj: .[0].obj, s: (map(.s // 0) | add)}) | sort_by(-.s) | .[0].obj // $primary)
+     end) as $validated_primary |
+
     # Total aggregates
     ($all | map(.spend) | add // 0) as $total_spend |
     ($all | map(.impressions) | add // 0) as $total_impressions |
@@ -92,7 +98,7 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
     {
       account_name: $name,
       currency: $currency,
-      primary_objective: $primary,
+      primary_objective: $validated_primary,
       objectives_present: $objectives,
       total_spend: $total_spend,
       total_impressions: $total_impressions,
@@ -217,7 +223,7 @@ fi
 
 # ─── 2. budget-actions.json ───────────────────────────────────────────────────
 if [[ -f "$RUN_DIR/_summaries/adsets-summary.json" ]]; then
-  jq --slurpfile cfg "$CONFIG" --argjson top_maintain 3 '
+  jq --slurpfile cfg "$CONFIG" --argjson top_maintain 5 '
 
     ($cfg[0].targets // {}) as $targets |
     ($targets.global.max_frequency // 5.0) as $global_max_freq |
@@ -233,7 +239,10 @@ if [[ -f "$RUN_DIR/_summaries/adsets-summary.json" ]]; then
         (if $obj == "OUTCOME_AWARENESS" then ($obj_targets.max_frequency // $global_max_freq)
          else $global_max_freq end) as $max_freq |
 
-        [.[] | select(.objective == $obj and .spend >= $min_spend)] |
+        # M5: If min_spend filters out ALL adsets for an objective, include all of them
+        ([.[] | select(.objective == $obj)] | sort_by(-.spend)) as $all_obj |
+        ([$all_obj[] | select(.spend >= $min_spend)]) as $filtered |
+        (if ($filtered | length) == 0 and ($all_obj | length) > 0 then $all_obj else $filtered end) |
 
         map(
           # Classify based on objective-appropriate KPIs
@@ -390,12 +399,14 @@ fi
 
 # ─── 3. funnel.json ──────────────────────────────────────────────────────────
 if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
-  jq '
+  FUNNEL_RATES=$(jq -c '.funnel_expected_rates // {}' "$CONFIG") || FUNNEL_RATES='{}'
+  jq --argjson funnel_rates "$FUNNEL_RATES" '
     ([.[].objective] | unique | sort) as $objectives |
 
     {objectives_present: $objectives} + (
       [$objectives[] as $obj |
         [.[] | select(.objective == $obj)] |
+        ($funnel_rates[$obj] // {}) as $obj_rates |
 
         {($obj): (
           if $obj == "OUTCOME_SALES" then
@@ -424,12 +435,17 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
               }
             } | . + {
               bottleneck: (
+                ($obj_rates.click_rate // 3.0) as $exp_click |
+                ($obj_rates.landing_rate // 70.0) as $exp_landing |
+                ($obj_rates.add_to_cart_rate // 8.0) as $exp_cart |
+                ($obj_rates.cart_to_checkout // 50.0) as $exp_checkout |
+                ($obj_rates.checkout_to_purchase // 60.0) as $exp_purchase |
                 [
-                  {stage: "TOFU_click", label: "impression \u2192 click", rate: .rates.click_rate, expected: 3.0},
-                  {stage: "TOFU_landing", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: 70.0},
-                  {stage: "MOFU_landing_to_cart", label: "landing page \u2192 add to cart", rate: .rates.add_to_cart_rate, expected: 8.0},
-                  {stage: "BOFU_cart_to_checkout", label: "add to cart \u2192 checkout", rate: .rates.cart_to_checkout, expected: 50.0},
-                  {stage: "BOFU_checkout_to_purchase", label: "checkout \u2192 purchase", rate: .rates.checkout_to_purchase, expected: 60.0}
+                  {stage: "TOFU_click", label: "impression \u2192 click", rate: .rates.click_rate, expected: $exp_click},
+                  {stage: "TOFU_landing", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: $exp_landing},
+                  {stage: "MOFU_landing_to_cart", label: "landing page \u2192 add to cart", rate: .rates.add_to_cart_rate, expected: $exp_cart},
+                  {stage: "BOFU_cart_to_checkout", label: "add to cart \u2192 checkout", rate: .rates.cart_to_checkout, expected: $exp_checkout},
+                  {stage: "BOFU_checkout_to_purchase", label: "checkout \u2192 purchase", rate: .rates.checkout_to_purchase, expected: $exp_purchase}
                 ] | map(select(.rate != null)) |
                 map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
                 sort_by(-.gap) | .[0] // null |
@@ -452,9 +468,11 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
               }
             } | . + {
               bottleneck: (
+                ($obj_rates.click_rate // 1.5) as $exp_click |
+                ($obj_rates.landing_rate // 70.0) as $exp_landing |
                 [
-                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: 1.5},
-                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: 70.0}
+                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: $exp_click},
+                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: $exp_landing}
                 ] | map(select(.rate != null)) |
                 map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
                 sort_by(-.gap) | .[0] // null |
@@ -497,8 +515,8 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "engagement_rate", label: "impression \u2192 engagement", rate: .rates.engagement_rate, expected: 2.0},
-                  {stage: "deep_engagement_rate", label: "engagement \u2192 page engagement", rate: .rates.deep_engagement_rate, expected: 15.0}
+                  {stage: "engagement_rate", label: "impression \u2192 engagement", rate: .rates.engagement_rate, expected: ($obj_rates.engagement_rate // 2.0)},
+                  {stage: "deep_engagement_rate", label: "engagement \u2192 page engagement", rate: .rates.deep_engagement_rate, expected: ($obj_rates.deep_engagement_rate // 15.0)}
                 ] | map(select(.rate != null)) |
                 map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
                 sort_by(-.gap) | .[0] // null |
@@ -524,9 +542,9 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: 2.0},
-                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: 60.0},
-                  {stage: "lead_conversion", label: "landing page \u2192 lead", rate: .rates.lead_conversion_rate, expected: 5.0}
+                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: ($obj_rates.click_rate // 2.0)},
+                  {stage: "landing_rate", label: "click \u2192 landing page", rate: .rates.landing_rate, expected: ($obj_rates.landing_rate // 60.0)},
+                  {stage: "lead_conversion", label: "landing page \u2192 lead", rate: .rates.lead_conversion_rate, expected: ($obj_rates.lead_conversion_rate // 5.0)}
                 ] | map(select(.rate != null)) |
                 map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
                 sort_by(-.gap) | .[0] // null |
@@ -550,8 +568,8 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
             } | . + {
               bottleneck: (
                 [
-                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: 1.5},
-                  {stage: "install_rate", label: "click \u2192 install", rate: .rates.install_rate, expected: 5.0}
+                  {stage: "click_rate", label: "impression \u2192 click", rate: .rates.click_rate, expected: ($obj_rates.click_rate // 1.5)},
+                  {stage: "install_rate", label: "click \u2192 install", rate: .rates.install_rate, expected: ($obj_rates.install_rate // 5.0)}
                 ] | map(select(.rate != null)) |
                 map(. + {gap: (if .expected > 0 then ((.expected - .rate) / .expected) else 0 end)}) |
                 sort_by(-.gap) | .[0] // null |
@@ -589,6 +607,7 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
       {available: false, reason: "period shorter than or equal to recent window"}
     else
 
+    . as $all_campaigns |
     {
       available: true,
       period: {start: $period_start, stop: $period_stop},
@@ -623,7 +642,7 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             cpl: (if .lead > 0 then (.spend / .lead) else null end),
             cpi: (if .app_install > 0 then (.spend / .app_install) else null end),
             cpv: (if .video_view > 0 then (.spend / .video_view) else null end),
-            frequency: $full.frequency
+            period_frequency: $full.frequency
           }) as $prior |
           {
             campaign_name: .campaign_name,
@@ -631,9 +650,8 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
             objective: .objective,
             prior_spend: $prior.spend,
             recent_spend: $r.spend,
-            frequency_delta_pct: (
-              if $prior.frequency > 0 and $r.frequency != null then
-                (($r.frequency - $prior.frequency) / $prior.frequency * 100 | round) else null end)
+            period_frequency: ($prior.period_frequency | . * 100 | round / 100),
+            recent_frequency: (if $r.frequency != null then ($r.frequency | . * 100 | round / 100) else null end)
           } +
           # Objective-appropriate deltas (comparing recent vs prior, not recent vs full period)
           if .objective == "OUTCOME_SALES" then {
@@ -703,14 +721,18 @@ if [[ -d "$RUN_DIR/_recent" && -f "$RUN_DIR/_recent/campaigns-summary.json" && -
               (if .cpl_delta_pct != null and .cpl_delta_pct > 15 then "cpl_rising" else null end)
             elif .objective == "OUTCOME_APP_PROMOTION" then
               (if .cpi_delta_pct != null and .cpi_delta_pct > 15 then "cpi_rising" else null end)
-            else null end),
-            (if .frequency_delta_pct != null and .frequency_delta_pct > 20 then "frequency_rising" else null end)
+            else null end)
           ] | map(select(. != null)))}
         else empty end
       ]
     } | . + {
       flagged: [.campaigns[] | select((.flags | length) > 0) |
         {campaign_name, objective, flags}]
+    } | . + {
+      recently_inactive: [$all_campaigns[] | select(.campaign_id != null) |
+        ($recent_idx[.campaign_id] // null) as $r |
+        if $r == null then {campaign_name, campaign_id, objective, period_spend: .spend} else empty end
+      ]
     }
 
     end' "$RUN_DIR/_summaries/campaigns-summary.json" > "$RUN_DIR/trends.json"
@@ -739,7 +761,7 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
     def obj_meta($obj):
       if $obj == "OUTCOME_SALES" then {conv: "purchases", sort: "roas", dir: "desc", zero_label: "zero_purchase"}
       elif $obj == "OUTCOME_TRAFFIC" then {conv: "link_clicks", sort: "link_click_ctr", dir: "desc", zero_label: "zero_clicks"}
-      elif $obj == "OUTCOME_AWARENESS" then {conv: "impressions", sort: "cpm", dir: "asc", zero_label: "zero_impressions"}
+      elif $obj == "OUTCOME_AWARENESS" then {conv: "video_view", sort: "cpm", dir: "asc", zero_label: "zero_views"}
       elif $obj == "OUTCOME_ENGAGEMENT" then {conv: "post_engagement", sort: "cpe", dir: "asc", zero_label: "zero_engagement"}
       elif $obj == "OUTCOME_LEADS" then {conv: "lead", sort: "cpl", dir: "asc", zero_label: "zero_leads"}
       elif $obj == "OUTCOME_APP_PROMOTION" then {conv: "app_install", sort: "cpi", dir: "asc", zero_label: "zero_installs"}
@@ -768,6 +790,10 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
         cpe: (if .cpe then (.cpe | . * 100 | round / 100) else null end),
         cpl: (if .cpl then (.cpl | . * 100 | round / 100) else null end),
         cpi: (if .cpi then (.cpi | . * 100 | round / 100) else null end),
+        impressions,
+        cpm: (if .impressions > 0 then (.spend / .impressions * 1000 | . * 100 | round / 100) else null end),
+        reach,
+        video_views: (.video_view // 0),
         purchases, post_engagement, lead, app_install
       };
 
@@ -785,7 +811,10 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
     # creative-analysis.json content
     ({objectives_present: $objectives} + (
       [$objectives[] as $obj |
-        [.[] | select(.objective == $obj and .spend >= $min_spend)] |
+        # M5: If min_spend filters out ALL ads for an objective, include all of them
+        ([.[] | select(.objective == $obj)] | sort_by(-.spend)) as $all_obj |
+        ([$all_obj[] | select(.spend >= $min_spend)]) as $filtered |
+        (if ($filtered | length) == 0 and ($all_obj | length) > 0 then $all_obj else $filtered end) |
         rank_ads($obj; $top_n; $bottom_n; $zero_n) as $r |
         {($obj): {
           overview: {
@@ -796,14 +825,17 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
           },
           winners: [$r.with_conv[:$r.win_n][] | format_ad],
           losers: [if $r.lose_n > 0 then $r.with_conv[-$r.lose_n:][] else empty end | format_ad],
-          zero_conversion: [$r.zero_conv[:$zero_n][] | {ad_name, campaign_name, creative_body, creative_title, spend}]
+          zero_conversion: [$r.zero_conv[:$zero_n][] | {ad_name, campaign_name, creative_body, creative_title, spend, impressions, cpm: (if .impressions > 0 then (.spend / .impressions * 1000 | . * 100 | round / 100) else null end), reach, video_views: .video_view}]
         }}
       ] | add // {}
     )) as $analysis |
 
     # creative-media.json content
     ([$objectives[] as $obj |
-      [.[] | select(.objective == $obj and .spend >= $min_spend)] |
+      # M5: If min_spend filters out ALL ads for an objective, include all of them
+      ([.[] | select(.objective == $obj)] | sort_by(-.spend)) as $all_obj |
+      ([$all_obj[] | select(.spend >= $min_spend)]) as $filtered |
+      (if ($filtered | length) == 0 and ($all_obj | length) > 0 then $all_obj else $filtered end) |
       rank_ads($obj; $top_n; $bottom_n; $zero_n) as $r |
       ($r.with_conv[:$r.win_n][] | . + {rank: "winner"}),
       (if $r.lose_n > 0 then $r.with_conv[-$r.lose_n:][] else empty end | . + {rank: "loser"}),
@@ -870,7 +902,7 @@ fi
 jq -n \
   --arg status "$STATUS" \
   --argjson produced "$(printf '%s\n' "${PRODUCED[@]}" | jq -Rn '[inputs]')" \
-  --argjson skipped "$(printf '%s\n' "${SKIPPED[@]+"${SKIPPED[@]}"}" 2>/dev/null | jq -Rn '[inputs]' 2>/dev/null || echo '[]')" \
+  --argjson skipped "$(if [[ ${#SKIPPED[@]} -eq 0 ]]; then echo '[]'; else printf '%s\n' "${SKIPPED[@]}" | jq -Rn '[inputs]'; fi)" \
   --argjson warnings "$WARNINGS_JSON" \
   '{status: $status, files_produced: $produced, files_skipped: $skipped, warnings: $warnings}' \
   > "$RUN_DIR/pipeline-status.json"
