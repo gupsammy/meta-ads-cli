@@ -100,7 +100,7 @@ For each objective present:
 - **OUTCOME_LEADS**: Compare `cpl` against `target_cpl`.
 - **OUTCOME_APP_PROMOTION**: Compare `cpi` against `target_cpi`.
 
-Report `total_spend` and spend breakdown across objectives for context. Lead with the primary objective's scorecard, then cover others.
+Report `total_spend` and spend breakdown across objectives for context. Note: `total_reach` sums reach across objectives — users reached by multiple campaigns are counted once per campaign, so the total overstates unique reach. Lead with the primary objective's scorecard, then cover others.
 
 ### 4. Budget Actions
 
@@ -119,7 +119,7 @@ Use `references/thresholds.md` interpretation rules for nuance.
 
 Read `funnel.json` from the run directory.
 
-Per-objective sections with different funnel shapes. Check the `type` field:
+Per-objective sections with different funnel shapes. Expected rates for bottleneck detection are sourced from `funnel_expected_rates` in config.json (configurable during onboarding) with hardcoded industry defaults as fallback. Check the `type` field:
 - `"funnel"`: conversion stages with bottleneck detection. Interpret the bottleneck stage.
 - `"reach_efficiency"`: awareness metrics (no conversion funnel). Report CPM, frequency, reach rate.
 
@@ -142,7 +142,7 @@ Connect bottlenecks to specific campaign or adset recommendations from Step 4.
 
 Read `trends.json` from the run directory.
 
-If `available: true`: contains per-campaign deltas between the full period and the recent 7-day window. Each campaign entry includes its `objective` and objective-appropriate delta metrics:
+If `available: true`: contains per-campaign deltas between the recent 7-day window and the prior window (full period minus recent). Each campaign entry includes its `objective` and objective-appropriate delta metrics:
 - Sales: `cpa_delta_pct`, `roas_delta_pct`
 - Traffic: `cpc_delta_pct`, `ctr_delta_pct`
 - Awareness: `cpm_delta_pct`
@@ -150,7 +150,11 @@ If `available: true`: contains per-campaign deltas between the full period and t
 - Leads: `cpl_delta_pct`
 - App: `cpi_delta_pct`
 
+Frequency is reported as `period_frequency` and `recent_frequency` raw values — compare directionally, no computed delta. A rising frequency alongside declining KPIs is a strong fatigue signal.
+
 The `flagged` array highlights campaigns where the primary KPI deteriorated >15%. The `flags` array per campaign shows specific deterioration signals.
+
+If `recently_inactive` contains campaigns, note they were active earlier in the period but had no recent activity — potential pauses or budget exhaustion.
 
 Identify concerning patterns: accelerating fatigue (frequency rising + KPI declining), spend shifting without performance improvement, campaigns that were strong in the period but weakening recently.
 
@@ -160,7 +164,13 @@ If `available: false`: note that trend data requires a comparison window and rec
 
 Read `creative-analysis.json` from the run directory. This is the highest-value analysis step — where agent intelligence matters most. Do not skip or abbreviate any sub-step.
 
+If an objective has 0 ads (empty winners/losers arrays), note this and explain why — typically the objective's adsets fell below the min_spend threshold. Do not fabricate analysis for empty data.
+
 Contains per-objective sections. Each has winners (ranked by objective-appropriate metric), losers, and zero-conversion ads. Each includes `creative_body` and `creative_title` — the actual ad copy text.
+
+For awareness, zero_conversion means zero video views. For reach-only awareness campaigns (no video), all ads will have conversions — focus on CPM comparison instead.
+
+For traffic, winners are ranked by CTR. Cross-reference CPC — high CTR with high CPC may indicate a targeting or placement issue, not a true winner.
 
 For the primary objective (and any other objective with significant spend):
 
