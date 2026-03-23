@@ -1,0 +1,23 @@
+/** Maps legacy Meta objective names to ODAX (Outcome-Driven Ad Experiences) equivalents */
+export const OBJECTIVE_MAP: Record<string, string> = {
+  LINK_CLICKS: 'OUTCOME_TRAFFIC',
+  CONVERSIONS: 'OUTCOME_SALES',
+  PRODUCT_CATALOG_SALES: 'OUTCOME_SALES',
+  OFFER_CLAIMS: 'OUTCOME_SALES',
+  BRAND_AWARENESS: 'OUTCOME_AWARENESS',
+  REACH: 'OUTCOME_AWARENESS',
+  LOCAL_AWARENESS: 'OUTCOME_AWARENESS',
+  STORE_VISITS: 'OUTCOME_AWARENESS',
+  VIDEO_VIEWS: 'OUTCOME_AWARENESS',
+  POST_ENGAGEMENT: 'OUTCOME_ENGAGEMENT',
+  PAGE_LIKES: 'OUTCOME_ENGAGEMENT',
+  EVENT_RESPONSES: 'OUTCOME_ENGAGEMENT',
+  MESSAGES: 'OUTCOME_ENGAGEMENT',
+  LEAD_GENERATION: 'OUTCOME_LEADS',
+  APP_INSTALLS: 'OUTCOME_APP_PROMOTION',
+};
+
+/** Normalize a raw objective to ODAX — unknown objectives pass through unchanged */
+export function normalizeObjective(raw: string): string {
+  return OBJECTIVE_MAP[raw] ?? raw;
+}
