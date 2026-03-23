@@ -4,6 +4,7 @@ import type { ActionEntry, InsightsRow, ExtractedMetrics } from '../../intel/typ
 
 describe('round2', () => {
   it('rounds to 2 decimal places', () => {
+    // 1.005 * 100 = 100.4999... in IEEE 754 — rounds DOWN, matching jq behavior
     expect(round2(1.005)).toBe(1);
     expect(round2(0.015)).toBe(0.02);
     expect(round2(99.995)).toBe(100);
@@ -281,6 +282,7 @@ describe('addDerived', () => {
     const result = addDerived(base);
     expect(result.cpa).toBe(20);
     expect(result.cpe).toBe(2.5);
+    // cpl is intentionally unrounded — matches jq add_derived (rounding deferred to prepare-analysis)
     expect(result.cpl).toBe(100 / 3);
     expect(result.cpi).toBe(50);
     expect(result.link_click_ctr).toBe(0.8);

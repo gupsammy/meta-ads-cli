@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { printError, EXIT_RUNTIME } from '../lib/output.js';
 
 export function registerIntelCommands(program: Command): void {
   const intel = program
@@ -10,8 +11,8 @@ export function registerIntelCommands(program: Command): void {
     .description('Run full analysis pipeline')
     .argument('[date-preset]', 'Date preset (last_7d, last_14d, last_30d)', 'last_14d')
     .action(async (_datePreset: string) => {
-      console.error('intel run: not yet implemented');
-      process.exit(1);
+      printError({ code: 'NOT_IMPLEMENTED', message: 'intel run: not yet implemented', hint: 'This command is under development' }, 'json');
+      process.exit(EXIT_RUNTIME);
     });
 
   intel
@@ -19,8 +20,8 @@ export function registerIntelCommands(program: Command): void {
     .description('Compute target defaults from current performance')
     .requiredOption('--account-id <id>', 'Ad account ID')
     .action(async (_opts: { accountId: string }) => {
-      console.error('intel defaults: not yet implemented');
-      process.exit(1);
+      printError({ code: 'NOT_IMPLEMENTED', message: 'intel defaults: not yet implemented', hint: 'This command is under development' }, 'json');
+      process.exit(EXIT_RUNTIME);
     });
 
   intel
@@ -28,7 +29,7 @@ export function registerIntelCommands(program: Command): void {
     .description('Creative scan for onboarding')
     .requiredOption('--account-id <id>', 'Ad account ID')
     .action(async (_opts: { accountId: string }) => {
-      console.error('intel scan: not yet implemented');
-      process.exit(1);
+      printError({ code: 'NOT_IMPLEMENTED', message: 'intel scan: not yet implemented', hint: 'This command is under development' }, 'json');
+      process.exit(EXIT_RUNTIME);
     });
 }

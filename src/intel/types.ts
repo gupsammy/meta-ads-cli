@@ -97,21 +97,19 @@ export interface AdSummary extends DerivedMetrics {
 
 // ─── Config types ──────────────────────────────────────────────────
 
-export interface ObjectiveTargets {
-  target_roas?: number;
-  target_cpa?: number;
-  target_cpl?: number;
-  target_cpi?: number;
-  target_cpe?: number;
-  target_cpm?: number;
-}
-
 export interface AnalysisConfig {
   top_n: number;
   bottom_n: number;
   zero_conversion_n: number;
 }
 
+/**
+ * Config v2 schema — mirrors ~/.meta-ads-intel/config.json.
+ * targets keys are objective strings (e.g. "OUTCOME_SALES") with loose
+ * per-objective KPI thresholds (cpa, roas, cpc, ctr, etc.) plus a
+ * "global" key for cross-objective settings (max_frequency, min_spend).
+ * funnel_expected_rates is nested per-objective with stage-name keys.
+ */
 export interface IntelConfig {
   account_id: string;
   account_name: string;
@@ -119,89 +117,36 @@ export interface IntelConfig {
   config_version: number;
   objectives_detected: string[];
   primary_objective: string;
-  targets: Record<string, ObjectiveTargets>;
+  targets: Record<string, Record<string, number>>;
   analysis: AnalysisConfig;
-  funnel_expected_rates: Record<string, number>;
+  funnel_expected_rates: Record<string, Record<string, number>>;
 }
 
 // ─── Analysis output types (output of prepare, read by agent) ─────
+//
+// These are placeholder types. The actual JSON shapes produced by
+// prepare-analysis.sh are complex, per-objective, and vary by objective
+// type. Precise interfaces will be defined when the prepare module is
+// ported in a later PR. Using Record<string, unknown> avoids encoding
+// incorrect contracts that downstream code might depend on.
 
-export interface ObjectiveHealth {
-  objective: string;
-  vs_target: Record<string, number>;
-}
+/** account-health.json — per-objective health with vs_target percentages */
+export type AccountHealth = Record<string, unknown>;
 
-export interface AccountHealth {
-  objectives: ObjectiveHealth[];
-}
+/** budget-actions.json — per-objective adset classifications */
+export type BudgetActions = Record<string, unknown>;
 
-export interface AdsetAction {
-  adset_id: string;
-  adset_name: string;
-  campaign_id: string;
-  action: 'scale' | 'maintain' | 'reduce' | 'pause' | 'refresh';
-  reason: string;
-}
+/** funnel.json — per-objective funnel stages, rates, bottleneck */
+export type FunnelData = Record<string, unknown>;
 
-export interface BudgetActions {
-  by_objective: Record<string, AdsetAction[]>;
-}
+/** trends.json — prior vs recent deltas per campaign + flags */
+export type TrendsData = Record<string, unknown>;
 
-export interface FunnelStage {
-  stage: string;
-  value: number;
-  rate: number;
-}
+/** creative-analysis.json — per-objective winners/losers/zero-conversion */
+export type CreativeAnalysis = Record<string, unknown>;
 
-export interface ObjectiveFunnel {
-  stages: FunnelStage[];
-  bottleneck: string | null;
-}
+/** creative-media.json — ad_id + rank (string) + URLs for media extraction */
+export type CreativeMedia = Record<string, unknown>;
 
-export interface FunnelData {
-  by_objective: Record<string, ObjectiveFunnel>;
-}
-
-export interface CampaignTrend {
-  campaign_id: string;
-  campaign_name: string;
-  prior: Record<string, number>;
-  recent: Record<string, number>;
-  deltas: Record<string, number>;
-  flags: string[];
-}
-
-export interface TrendsData {
-  campaigns: CampaignTrend[];
-}
-
-export interface CreativeEntry {
-  ad_id: string;
-  ad_name: string;
-  rank: number;
-  metrics: Partial<DerivedMetrics>;
-}
-
-export interface ObjectiveCreatives {
-  winners: CreativeEntry[];
-  losers: CreativeEntry[];
-  zero_conversion: CreativeEntry[];
-}
-
-export interface CreativeAnalysis {
-  by_objective: Record<string, ObjectiveCreatives>;
-}
-
-export interface CreativeMedia {
-  ad_id: string;
-  rank: number;
-  image_url?: string;
-  thumbnail_url?: string;
-}
-
-export interface PipelineStatus {
-  status: 'success' | 'partial' | 'error';
-  files_produced: string[];
-  files_skipped: string[];
-  warnings: string[];
-}
+/** pipeline-status.json — status, files_produced, files_skipped, warnings */
+export type PipelineStatus = Record<string, unknown>;

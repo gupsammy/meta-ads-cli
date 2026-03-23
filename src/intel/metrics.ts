@@ -21,10 +21,11 @@ export function attrGuard(actions: ActionEntry[] | null | undefined): ActionEntr
  * Returns numeric value of first match, or 0 if none.
  */
 export function omniFirst(actions: ActionEntry[], types: string[]): number {
-  const matches = actions.filter((e) => types.includes(e.action_type));
-  if (matches.length === 0) return 0;
-  matches.sort((a, b) => types.indexOf(a.action_type) - types.indexOf(b.action_type));
-  return parseFloat(String(matches[0].value)) || 0;
+  for (const type of types) {
+    const match = actions.find((e) => e.action_type === type);
+    if (match) return parseFloat(String(match.value)) || 0;
+  }
+  return 0;
 }
 
 /**
@@ -64,6 +65,14 @@ export function extractMetrics(row: InsightsRow): ExtractedMetrics {
 
 /**
  * Add 6 derived fields to extracted metrics.
+ *
+ * Cost-per metrics (cpa, cpe, cpl, cpi) are intentionally unrounded here —
+ * matches jq add_derived which stores raw divisions. Rounding happens
+ * downstream in prepare-analysis when writing agent-facing JSON files.
+ *
+ * Rate/CPC metrics (link_click_ctr, link_click_cpc) are rounded to 2dp inline,
+ * matching jq's `* 100 | round / 100` in add_derived.
+ *
  * Nullable fields return null when divisor is 0; link_click_ctr returns 0 instead.
  */
 export function addDerived(metrics: ExtractedMetrics): DerivedMetrics {
