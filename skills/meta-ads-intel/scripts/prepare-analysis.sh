@@ -87,7 +87,7 @@ if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
     # Validate primary_objective: if not in data, fall back to highest-spend objective
     (if ($objectives | index($primary)) then $primary
      else ([$all[] | {obj: .objective, s: .spend}] | group_by(.obj) |
-       map({obj: .[0].obj, s: (map(.s) | add)}) | sort_by(-.s) | .[0].obj // $primary)
+       map({obj: .[0].obj, s: (map(.s // 0) | add)}) | sort_by(-.s) | .[0].obj // $primary)
      end) as $validated_primary |
 
     # Total aggregates
@@ -399,7 +399,7 @@ fi
 
 # ─── 3. funnel.json ──────────────────────────────────────────────────────────
 if [[ -f "$RUN_DIR/_summaries/campaigns-summary.json" ]]; then
-  FUNNEL_RATES=$(jq -c '.funnel_expected_rates // {}' "$CONFIG")
+  FUNNEL_RATES=$(jq -c '.funnel_expected_rates // {}' "$CONFIG") || FUNNEL_RATES='{}'
   jq --argjson funnel_rates "$FUNNEL_RATES" '
     ([.[].objective] | unique | sort) as $objectives |
 
@@ -825,7 +825,7 @@ if [[ -f "$RUN_DIR/_summaries/ads-summary.json" ]]; then
           },
           winners: [$r.with_conv[:$r.win_n][] | format_ad],
           losers: [if $r.lose_n > 0 then $r.with_conv[-$r.lose_n:][] else empty end | format_ad],
-          zero_conversion: [$r.zero_conv[:$zero_n][] | {ad_name, campaign_name, creative_body, creative_title, spend}]
+          zero_conversion: [$r.zero_conv[:$zero_n][] | {ad_name, campaign_name, creative_body, creative_title, spend, impressions, cpm: (if .impressions > 0 then (.spend / .impressions * 1000 | . * 100 | round / 100) else null end), reach, video_views: .video_view}]
         }}
       ] | add // {}
     )) as $analysis |
