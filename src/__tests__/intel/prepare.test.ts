@@ -232,14 +232,14 @@ describe('pipeline status', () => {
     fs.writeFileSync(configPath, JSON.stringify({ ...makeConfig(), config_version: 1 }));
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
 
-    await expect(prepare(tmpDir, configPath)).rejects.toThrow('v1 format');
+    expect(() => prepare(tmpDir, configPath)).toThrow('v1 format');
   });
 
   it('throws on missing config', async () => {
     fs.unlinkSync(configPath);
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
 
-    await expect(prepare(tmpDir, path.join(tmpDir, 'nonexistent.json'))).rejects.toThrow('not found');
+    expect(() => prepare(tmpDir, path.join(tmpDir, 'nonexistent.json'))).toThrow('not found');
   });
 });
 

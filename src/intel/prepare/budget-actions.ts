@@ -182,7 +182,7 @@ export function computeBudgetActions(adsets: AdsetSummary[], config: IntelConfig
       refresh,
       maintain: {
         count: maintain.length,
-        top_by_spend: maintain.sort((a, b) => b.spend - a.spend), // All maintain adsets — bug fix from shell's [:5]
+        top_by_spend: maintain, // All maintain adsets — bug fix from shell's [:5]
       },
       summary: {
         total_evaluated: classified.length,

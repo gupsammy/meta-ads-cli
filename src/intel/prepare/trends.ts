@@ -1,4 +1,4 @@
-import type { CampaignSummary, TrendsData } from '../types.js';
+import type { CampaignSummary, TrendsData, TrendCampaign } from '../types.js';
 import { round2 } from '../metrics.js';
 
 /**
@@ -33,7 +33,7 @@ export function computeTrends(campaigns: CampaignSummary[], recentCampaigns: Cam
 
   const objectives = [...new Set(campaigns.map((c) => c.objective))].sort();
 
-  const trendCampaigns: TrendsData & { available: true } extends { campaigns: infer T } ? T : never = [];
+  const trendCampaigns: TrendCampaign[] = [];
 
   for (const c of campaigns) {
     if (c.campaign_id === null) continue;

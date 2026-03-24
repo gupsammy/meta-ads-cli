@@ -29,7 +29,7 @@ function writeJson(filePath: string, data: unknown): void {
  * @param runDir - directory containing _summaries/, optionally _recent/ and _raw/
  * @param configPath - path to config.json (defaults to ~/.meta-ads-intel/config.json)
  */
-export async function prepare(runDir: string, configPath?: string): Promise<PipelineStatus> {
+export function prepare(runDir: string, configPath?: string): PipelineStatus {
   const cfgPath = configPath ?? path.join(process.env.HOME ?? '', '.meta-ads-intel', 'config.json');
 
   // Read and validate config
@@ -94,7 +94,7 @@ export async function prepare(runDir: string, configPath?: string): Promise<Pipe
     produced.push('trends.json');
   } else {
     // Always produce trends.json (matches shell behavior)
-    writeJson(path.join(runDir, 'trends.json'), { available: false, reason: 'no recent window data' });
+    writeJson(path.join(runDir, 'trends.json'), { available: false, reason: 'no campaigns data' });
     produced.push('trends.json');
   }
 
