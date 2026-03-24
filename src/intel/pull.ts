@@ -190,8 +190,9 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
   // process.umask() is unavailable in worker threads — gracefully skip
   let oldUmask: number | undefined;
   try { oldUmask = process.umask(0o077); } catch { /* worker thread */ }
-  const lockDir = acquireLock(dataDir);
+  let lockDir: string | undefined;
   try {
+    lockDir = acquireLock(dataDir);
     // Resolve account and token
     const { accountId, source } = resolveIntelAccountId(skillConfigPath);
     const token = options?.accessToken ?? resolveAccessToken();
@@ -381,7 +382,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
 
     return { runDir, pipelineStatus, warnings };
   } finally {
-    releaseLock(lockDir);
+    if (lockDir) releaseLock(lockDir);
     if (oldUmask !== undefined) try { process.umask(oldUmask); } catch { /* worker thread */ }
   }
 }
