@@ -65,29 +65,29 @@ export interface DerivedMetrics extends ExtractedMetrics {
 // ─── Summary types (output of summarize, input to prepare) ────────
 
 export interface CampaignSummary extends DerivedMetrics {
-  campaign_id: string;
-  campaign_name: string;
+  campaign_id: string | null;
+  campaign_name: string | null;
   objective: string;
   date_start: string;
   date_stop: string;
 }
 
 export interface AdsetSummary extends DerivedMetrics {
-  adset_id: string;
-  adset_name: string;
-  campaign_id: string;
-  campaign_name: string;
+  adset_id: string | null;
+  adset_name: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
   objective: string;
   date_start: string;
   date_stop: string;
 }
 
 export interface AdSummary extends DerivedMetrics {
-  ad_id: string;
-  ad_name: string;
-  adset_id: string;
-  campaign_id: string;
-  campaign_name: string;
+  ad_id: string | null;
+  ad_name: string | null;
+  adset_id: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
   objective: string;
   date_start: string;
   date_stop: string;
