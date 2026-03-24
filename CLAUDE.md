@@ -67,7 +67,7 @@ All list commands accept `--limit`, `--after`, `--access-token`, `-o`, `-v`. Cre
 
 Data directory: `META_ADS_DATA_DIR` env → `~/.meta-ads-intel/data/`. Each run creates a timestamped subdirectory (`YYYY-MM-DD_HHMM/`). A `_recent_raw/` symlink always points to the latest raw data.
 
-Account ID resolution: `--account-id` option → `META_ADS_ACCOUNT_ID` env → `~/.meta-ads-intel/config.json` → CLI config's `default_account_id`.
+Account ID resolution: `META_ADS_ACCOUNT_ID` env → `~/.meta-ads-intel/config.json` → CLI config's `default_account_id`.
 
 Key behaviors:
 - Sets `umask 077` during execution (ad spend data is sensitive) — restored in `finally`.

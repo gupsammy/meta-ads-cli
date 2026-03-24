@@ -16,6 +16,7 @@ const INSIGHT_FIELDS =
   'actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
 const PULL_LIMIT = 500;
+const pad = (n: number) => String(n).padStart(2, '0');
 
 export interface PullOptions {
   datePreset?: string;
@@ -209,7 +210,6 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
 
     // Create timestamped run directory (YYYY-MM-DD_HHMM)
     const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
     const runDirName = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
     const runDir = path.join(dataDir, runDirName);
     const rawDir = path.join(runDir, '_raw');
