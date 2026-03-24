@@ -95,6 +95,63 @@ export interface AdSummary extends DerivedMetrics {
   creative_title: string;
 }
 
+// ─── Defaults types (output of compute-defaults) ─────────────────
+
+/** Per-objective KPI block — shape varies by objective type */
+export type ObjectiveDefaults = Record<string, number | null>;
+
+/** Output of computeDefaults() — mirrors compute-defaults.sh JSON */
+export interface DefaultsResult {
+  objectives: Record<string, ObjectiveDefaults & { campaign_count: number; spend: number }>;
+  total_spend: number;
+  objectives_detected: string[];
+}
+
+// ─── Scan types (output of creative-scan) ─────────────────────────
+
+/** Single ad entry in scan winners/losers lists */
+export interface ScanAdEntry {
+  ad_name: string | null;
+  campaign_name: string | null;
+  objective: string;
+  roas: number;
+  cpa: number | null;
+  cpc: number;
+  ctr: number;
+  link_click_ctr: number;
+  link_click_cpc: number | null;
+  cpe: number | null;
+  cpl: number | null;
+  cpi: number | null;
+  creative_body: string;
+  creative_title: string;
+  format: 'video' | 'image' | 'unknown';
+}
+
+/** Per-objective group in scan output */
+export interface ScanObjectiveGroup {
+  winners: ScanAdEntry[];
+  losers: ScanAdEntry[];
+  total_ads: number;
+  ads_with_conversions: number;
+}
+
+/** Format breakdown across all scanned ads */
+export interface FormatBreakdown {
+  video: number;
+  image: number;
+  unknown: number;
+  confidence: 'high' | 'low' | 'n/a';
+}
+
+/** Output of creativeScan() — mirrors onboard-scan.sh JSON */
+export interface ScanResult {
+  by_objective: Record<string, ScanObjectiveGroup>;
+  format_breakdown: FormatBreakdown;
+  objectives_detected: string[];
+  total_ads: number;
+}
+
 // ─── Config types ──────────────────────────────────────────────────
 
 export interface AnalysisConfig {
