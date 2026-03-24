@@ -158,6 +158,8 @@ export interface AnalysisConfig {
   top_n: number;
   bottom_n: number;
   zero_conversion_n: number;
+  /** Legacy key — shell falls back to this when zero_conversion_n is absent */
+  zero_purchase_n?: number;
 }
 
 /**
@@ -180,30 +182,199 @@ export interface IntelConfig {
 }
 
 // ─── Analysis output types (output of prepare, read by agent) ─────
-//
-// These are placeholder types. The actual JSON shapes produced by
-// prepare-analysis.sh are complex, per-objective, and vary by objective
-// type. Precise interfaces will be defined when the prepare module is
-// ported in a later PR. Using Record<string, unknown> avoids encoding
-// incorrect contracts that downstream code might depend on.
+
+/** Per-objective KPI block in account-health.json — shape varies by objective */
+export interface AccountHealthObjective {
+  campaign_count: number;
+  spend: number;
+  impressions: number;
+  reach: number;
+  [key: string]: number | string | null;
+}
 
 /** account-health.json — per-objective health with vs_target percentages */
-export type AccountHealth = Record<string, unknown>;
+export interface AccountHealth {
+  account_name: string;
+  currency: string;
+  primary_objective: string;
+  objectives_present: string[];
+  total_spend: number;
+  total_impressions: number;
+  total_reach: number;
+  [key: string]: AccountHealthObjective | string | string[] | number;
+}
+
+/** Per-adset classification entry in budget-actions.json */
+export interface BudgetActionEntry {
+  adset_name: string | null;
+  campaign_name: string | null;
+  objective: string;
+  action: 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain';
+  reason: string;
+  spend: number;
+  frequency: number;
+  [key: string]: string | number | null;
+}
+
+/** Per-objective budget action group */
+export interface BudgetActionGroup {
+  scale: BudgetActionEntry[];
+  reduce: BudgetActionEntry[];
+  pause: BudgetActionEntry[];
+  refresh: BudgetActionEntry[];
+  maintain: { count: number; top_by_spend: BudgetActionEntry[] };
+  summary: {
+    total_evaluated: number;
+    scale: number;
+    reduce: number;
+    pause: number;
+    refresh: number;
+    maintain: number;
+  };
+}
 
 /** budget-actions.json — per-objective adset classifications */
-export type BudgetActions = Record<string, unknown>;
+export interface BudgetActions {
+  objectives_present: string[];
+  [key: string]: BudgetActionGroup | string[];
+}
+
+/** Bottleneck detection result */
+export interface Bottleneck {
+  stage: string;
+  label: string;
+  rate: number;
+}
+
+/** Per-objective funnel data — varies by objective type */
+export interface FunnelObjective {
+  type: 'funnel' | 'reach_efficiency' | 'unknown';
+  [key: string]: unknown;
+}
 
 /** funnel.json — per-objective funnel stages, rates, bottleneck */
-export type FunnelData = Record<string, unknown>;
+export interface FunnelData {
+  objectives_present: string[];
+  [key: string]: FunnelObjective | string[];
+}
+
+/** Per-campaign trend entry */
+export interface TrendCampaign {
+  campaign_name: string | null;
+  campaign_id: string | null;
+  objective: string;
+  prior_spend: number;
+  recent_spend: number;
+  period_frequency: number;
+  recent_frequency: number | null;
+  flags: string[];
+  [key: string]: string | number | string[] | null;
+}
+
+/** Flagged campaign summary */
+export interface TrendFlagged {
+  campaign_name: string | null;
+  objective: string;
+  flags: string[];
+}
+
+/** Recently inactive campaign */
+export interface TrendInactive {
+  campaign_name: string | null;
+  campaign_id: string | null;
+  objective: string;
+  period_spend: number;
+}
 
 /** trends.json — prior vs recent deltas per campaign + flags */
-export type TrendsData = Record<string, unknown>;
+export type TrendsData =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      period: { start: string | null; stop: string | null };
+      recent: { start: string | null; stop: string | null };
+      objectives_present: string[];
+      campaigns: TrendCampaign[];
+      flagged: TrendFlagged[];
+      recently_inactive: TrendInactive[];
+    };
+
+/** Formatted ad entry in creative-analysis winners/losers */
+export interface CreativeAdEntry {
+  ad_name: string | null;
+  campaign_name: string | null;
+  creative_body: string;
+  creative_title: string;
+  spend: number;
+  roas: number;
+  cpa: number | null;
+  cpc: number;
+  ctr: number;
+  cpe: number | null;
+  cpl: number | null;
+  cpi: number | null;
+  impressions: number;
+  cpm: number | null;
+  reach: number;
+  video_views: number;
+  purchases: number;
+  post_engagement: number;
+  lead: number;
+  app_install: number;
+}
+
+/** Zero-conversion ad entry */
+export interface CreativeZeroEntry {
+  ad_name: string | null;
+  campaign_name: string | null;
+  creative_body: string;
+  creative_title: string;
+  spend: number;
+  impressions: number;
+  cpm: number | null;
+  reach: number;
+  video_views: number;
+}
+
+/** Per-objective creative analysis group */
+export interface CreativeObjectiveGroup {
+  overview: {
+    total_ads: number;
+    with_conversions: number;
+    zero_conversion_count: number;
+    zero_conversion_total_spend: number;
+  };
+  winners: CreativeAdEntry[];
+  losers: CreativeAdEntry[];
+  zero_conversion: CreativeZeroEntry[];
+}
 
 /** creative-analysis.json — per-objective winners/losers/zero-conversion */
-export type CreativeAnalysis = Record<string, unknown>;
+export interface CreativeAnalysis {
+  objectives_present: string[];
+  [key: string]: CreativeObjectiveGroup | string[];
+}
 
-/** creative-media.json — ad_id + rank (string) + URLs for media extraction */
-export type CreativeMedia = Record<string, unknown>;
+/** creative-media.json — flat array entry with ad_id + rank + URLs */
+export interface CreativeMediaEntry {
+  ad_id: string | null;
+  ad_name: string | null;
+  objective: string;
+  rank: 'winner' | 'loser' | 'zero_conversion';
+  primary_metric_name: string;
+  primary_metric_value: number;
+  spend: number;
+  creative_image_url: string;
+  creative_thumbnail_url: string;
+}
+
+/** creative-media.json is a flat array */
+export type CreativeMedia = CreativeMediaEntry[];
 
 /** pipeline-status.json — status, files_produced, files_skipped, warnings */
-export type PipelineStatus = Record<string, unknown>;
+export interface PipelineStatus {
+  status: 'complete' | 'partial';
+  files_produced: string[];
+  files_skipped: string[];
+  warnings: string[];
+}
