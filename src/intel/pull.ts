@@ -184,12 +184,11 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
   const skillConfigPath = options?.configPath ?? path.join(homedir(), '.meta-ads-intel', 'config.json');
   const warnings: string[] = [];
 
-  fs.mkdirSync(dataDir, { recursive: true });
-
   // Restrict file permissions to owner-only (matches shell's umask 077)
   // process.umask() is unavailable in worker threads — gracefully skip
   let oldUmask: number | undefined;
   try { oldUmask = process.umask(0o077); } catch { /* worker thread */ }
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   let lockDir: string | undefined;
   try {
     lockDir = acquireLock(dataDir);
@@ -284,6 +283,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       const flatData = creativesResult.data.map(a => ({
         id: a.id,
         name: a.name,
+        creative_id: a.creative?.id ?? '',
         creative_body: a.creative?.body ?? '',
         creative_title: a.creative?.title ?? '',
         creative_image_url: a.creative?.image_url ?? '',

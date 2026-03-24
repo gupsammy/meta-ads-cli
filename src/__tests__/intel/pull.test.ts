@@ -431,6 +431,7 @@ describe('pull', () => {
       await pull({ dataDir, configPath });
 
       const creatives = JSON.parse(fs.readFileSync(path.join(dataDir, 'creatives-master.json'), 'utf-8'));
+      expect(creatives.data[0].creative_id).toBe('cr1');
       expect(creatives.data[0].creative_body).toBe('Body text');
       expect(creatives.data[0].creative_title).toBe('Title');
       expect(creatives.data[0].creative_image_url).toBe('https://img.jpg');
