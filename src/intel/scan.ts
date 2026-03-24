@@ -132,10 +132,12 @@ export async function creativeScan(
     const lead = omniFirst(actions, ['onsite_conversion.lead_grouped', 'lead']);
     const app_install = omniFirst(actions, ['omni_app_install', 'mobile_app_install', 'app_install']);
 
-    const cpa = purchases > 0 ? round2(spend / purchases) : null;
-    const cpe = post_engagement > 0 ? round2(spend / post_engagement) : null;
-    const cpl = lead > 0 ? round2(spend / lead) : null;
-    const cpi = app_install > 0 ? round2(spend / app_install) : null;
+    // Cost-per metrics left unrounded — matches shell's add_derived which defers
+    // rounding to prepare-analysis.sh downstream
+    const cpa = purchases > 0 ? spend / purchases : null;
+    const cpe = post_engagement > 0 ? spend / post_engagement : null;
+    const cpl = lead > 0 ? spend / lead : null;
+    const cpi = app_install > 0 ? spend / app_install : null;
     const link_click_ctr = impressions > 0 ? round2(link_clicks / impressions * 100) : 0;
     const link_click_cpc = link_clicks > 0 ? round2(spend / link_clicks) : null;
 
