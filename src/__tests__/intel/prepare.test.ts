@@ -929,4 +929,271 @@ describe('edge cases', () => {
     expect(status.status).toBe('complete');
     expect(status.files_produced).toBeDefined();
   });
+
+  it('uses zero_purchase_n fallback when zero_conversion_n absent', async () => {
+    fs.writeFileSync(configPath, JSON.stringify(makeConfig({
+      analysis: { top_n: 15, bottom_n: 10, zero_purchase_n: 3 },
+    })));
+    const ads = [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, spend: 200 }),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeAd({ ad_id: `z${i}`, ad_name: `Zero ${i}`, purchases: 0, roas: 0, spend: 100 }),
+      ),
+    ];
+    writeJson('_summaries/ads-summary.json', ads);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    // zero_purchase_n=3, so only 3 zero-conversion ads shown
+    expect((sales.zero_conversion as unknown[]).length).toBe(3);
+  });
+
+  it('funnel returns unknown type for unrecognized objective', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ objective: 'SOME_NEW_OBJECTIVE' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const funnel = readOutput('funnel.json') as Record<string, unknown>;
+    const unknown = funnel.SOME_NEW_OBJECTIVE as Record<string, unknown>;
+    expect(unknown.type).toBe('unknown');
+  });
+});
+
+// ─── Budget actions: remaining objectives ─────────────────────────
+
+describe('budget actions — remaining objectives', () => {
+  it('classifies AWARENESS adset: pause on zero impressions', async () => {
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ objective: 'OUTCOME_AWARENESS', impressions: 0, spend: 100 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const awareness = actions.OUTCOME_AWARENESS as Record<string, unknown>;
+    expect((awareness.pause as unknown[]).length).toBe(1);
+  });
+
+  it('classifies AWARENESS adset: scale when CPM below target', async () => {
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ objective: 'OUTCOME_AWARENESS', impressions: 100000, cpm: 5.0, spend: 500, video_view: 1000 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const awareness = actions.OUTCOME_AWARENESS as Record<string, unknown>;
+    // cpm=5.0 < 10*0.8=8 → scale
+    expect((awareness.scale as unknown[]).length).toBe(1);
+  });
+
+  it('classifies ENGAGEMENT adset: pause on zero engagement', async () => {
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ objective: 'OUTCOME_ENGAGEMENT', post_engagement: 0, spend: 100 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const eng = actions.OUTCOME_ENGAGEMENT as Record<string, unknown>;
+    expect((eng.pause as unknown[]).length).toBe(1);
+  });
+
+  it('classifies ENGAGEMENT adset: scale when CPE below target', async () => {
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ objective: 'OUTCOME_ENGAGEMENT', post_engagement: 500, cpe: 0.3, spend: 150 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const eng = actions.OUTCOME_ENGAGEMENT as Record<string, unknown>;
+    // cpe=0.3 < 0.5*0.8=0.4 → scale
+    expect((eng.scale as unknown[]).length).toBe(1);
+  });
+
+  it('classifies LEADS adset: pause on zero leads, scale when CPL below target', async () => {
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ adset_id: 'as1', objective: 'OUTCOME_LEADS', lead: 0, spend: 100 }),
+      makeAdset({ adset_id: 'as2', objective: 'OUTCOME_LEADS', lead: 10, cpl: 10, spend: 100 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const leads = actions.OUTCOME_LEADS as Record<string, unknown>;
+    expect((leads.pause as unknown[]).length).toBe(1);
+    // cpl=10 < 20*0.8=16 → scale
+    expect((leads.scale as unknown[]).length).toBe(1);
+  });
+
+  it('classifies APP_PROMOTION adset: pause on zero installs, scale when CPI below target', async () => {
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ adset_id: 'as1', objective: 'OUTCOME_APP_PROMOTION', app_install: 0, spend: 100 }),
+      makeAdset({ adset_id: 'as2', objective: 'OUTCOME_APP_PROMOTION', app_install: 50, cpi: 1.5, spend: 75 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const app = actions.OUTCOME_APP_PROMOTION as Record<string, unknown>;
+    expect((app.pause as unknown[]).length).toBe(1);
+    // cpi=1.5 < 3*0.8=2.4 → scale
+    expect((app.scale as unknown[]).length).toBe(1);
+  });
+
+  it('uses awareness-specific max_frequency override', async () => {
+    fs.writeFileSync(configPath, JSON.stringify(makeConfig({
+      targets: {
+        OUTCOME_AWARENESS: { cpm: 10, max_frequency: 3.0 },
+        global: { max_frequency: 5.0, min_spend: 0 },
+      },
+    })));
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ objective: 'OUTCOME_AWARENESS', frequency: 4.0, impressions: 50000, cpm: 8.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const awareness = actions.OUTCOME_AWARENESS as Record<string, unknown>;
+    // frequency 4.0 > awareness max_frequency 3.0 → refresh
+    expect((awareness.refresh as unknown[]).length).toBe(1);
+  });
+});
+
+// ─── Trends: remaining objectives ─────────────────────────────────
+
+describe('trends — remaining objectives', () => {
+  it('computes AWARENESS trends with cpm_rising flag', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_AWARENESS', spend: 1000, impressions: 100000, video_view: 5000, cpm: 10, date_start: '2026-03-01' }),
+    ]);
+    writeJson('_recent/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_AWARENESS', spend: 600, impressions: 40000, video_view: 2000, cpm: 15, date_start: '2026-03-08' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const trends = readOutput('trends.json') as Record<string, unknown>;
+    const campaigns = (trends as Record<string, unknown>).campaigns as Record<string, unknown>[];
+    expect(campaigns[0].prior_cpm).toBeDefined();
+    expect(campaigns[0].recent_cpm).toBeDefined();
+    expect(campaigns[0].cpm_delta_pct).toBeDefined();
+    // Prior: spend=400, imp=60000 → cpm=6.67. Recent cpm=15. delta=(15-6.67)/6.67*100≈125 → cpm_rising
+    expect(campaigns[0].flags).toContain('cpm_rising');
+  });
+
+  it('computes ENGAGEMENT trends with cpe_rising flag', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_ENGAGEMENT', spend: 1000, post_engagement: 2000, cpe: 0.5, date_start: '2026-03-01' }),
+    ]);
+    writeJson('_recent/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_ENGAGEMENT', spend: 600, post_engagement: 500, cpe: 1.2, date_start: '2026-03-08' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const trends = readOutput('trends.json') as Record<string, unknown>;
+    const campaigns = (trends as Record<string, unknown>).campaigns as Record<string, unknown>[];
+    expect(campaigns[0].prior_cpe).toBeDefined();
+    expect(campaigns[0].recent_cpe).toBeDefined();
+    // Prior: spend=400, post_engagement=1500 → cpe=0.267. Recent cpe=1.2 → delta huge → cpe_rising
+    expect(campaigns[0].flags).toContain('cpe_rising');
+  });
+
+  it('computes LEADS trends with cpl_rising flag', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_LEADS', spend: 1000, lead: 50, cpl: 20, date_start: '2026-03-01' }),
+    ]);
+    writeJson('_recent/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_LEADS', spend: 600, lead: 10, cpl: 60, date_start: '2026-03-08' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const trends = readOutput('trends.json') as Record<string, unknown>;
+    const campaigns = (trends as Record<string, unknown>).campaigns as Record<string, unknown>[];
+    expect(campaigns[0].prior_cpl).toBeDefined();
+    expect(campaigns[0].recent_cpl).toBeDefined();
+    // Prior: spend=400, lead=40 → cpl=10. Recent cpl=60 → delta=500% → cpl_rising
+    expect(campaigns[0].flags).toContain('cpl_rising');
+  });
+
+  it('computes APP_PROMOTION trends with cpi_rising flag', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_APP_PROMOTION', spend: 1000, app_install: 200, cpi: 5, date_start: '2026-03-01' }),
+    ]);
+    writeJson('_recent/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', objective: 'OUTCOME_APP_PROMOTION', spend: 600, app_install: 30, cpi: 20, date_start: '2026-03-08' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const trends = readOutput('trends.json') as Record<string, unknown>;
+    const campaigns = (trends as Record<string, unknown>).campaigns as Record<string, unknown>[];
+    expect(campaigns[0].prior_cpi).toBeDefined();
+    expect(campaigns[0].recent_cpi).toBeDefined();
+    // Prior: spend=400, app_install=170 → cpi=2.35. Recent cpi=20 → cpi_rising
+    expect(campaigns[0].flags).toContain('cpi_rising');
+  });
+
+  it('no flags when deltas are within 15% threshold', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', spend: 1000, purchases: 20, revenue: 2000, roas: 2.0, cpa: 50, date_start: '2026-03-01' }),
+    ]);
+    writeJson('_recent/campaigns-summary.json', [
+      makeCampaign({ campaign_id: 'c1', spend: 500, purchases: 10, revenue: 1000, roas: 2.0, cpa: 50, date_start: '2026-03-08' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const trends = readOutput('trends.json') as Record<string, unknown>;
+    const campaigns = (trends as Record<string, unknown>).campaigns as Record<string, unknown>[];
+    expect(campaigns[0].flags).toEqual([]);
+  });
+});
+
+// ─── Creative ranking: remaining objectives ───────────────────────
+
+describe('creative ranking — remaining objectives', () => {
+  it('ranks ENGAGEMENT ads by cpe (asc — lower is better)', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', objective: 'OUTCOME_ENGAGEMENT', post_engagement: 500, cpe: 0.2, spend: 100 }),
+      makeAd({ ad_id: 'a2', objective: 'OUTCOME_ENGAGEMENT', post_engagement: 100, cpe: 1.0, spend: 100 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const eng = analysis.OUTCOME_ENGAGEMENT as Record<string, unknown>;
+    const winners = eng.winners as Record<string, unknown>[];
+    expect(winners[0].ad_name).toBe('Ad 1'); // lower cpe wins
+  });
+
+  it('ranks LEADS ads by cpl (asc — lower is better)', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', objective: 'OUTCOME_LEADS', lead: 20, cpl: 5, spend: 100 }),
+      makeAd({ ad_id: 'a2', objective: 'OUTCOME_LEADS', lead: 5, cpl: 20, spend: 100 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const leads = analysis.OUTCOME_LEADS as Record<string, unknown>;
+    const winners = leads.winners as Record<string, unknown>[];
+    expect(winners[0].ad_name).toBe('Ad 1'); // lower cpl wins
+  });
+
+  it('ranks APP_PROMOTION ads by cpi (asc — lower is better)', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', objective: 'OUTCOME_APP_PROMOTION', app_install: 50, cpi: 2, spend: 100 }),
+      makeAd({ ad_id: 'a2', objective: 'OUTCOME_APP_PROMOTION', app_install: 10, cpi: 10, spend: 100 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const app = analysis.OUTCOME_APP_PROMOTION as Record<string, unknown>;
+    const winners = app.winners as Record<string, unknown>[];
+    expect(winners[0].ad_name).toBe('Ad 1'); // lower cpi wins
+  });
+
+  it('creative-media includes correct primary_metric_value', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.567, spend: 200 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const media = readOutput('creative-media.json') as Record<string, unknown>[];
+    expect(media[0].primary_metric_name).toBe('roas');
+    expect(media[0].primary_metric_value).toBe(3.57); // round2(3.567)
+  });
 });

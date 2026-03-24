@@ -158,6 +158,8 @@ export interface AnalysisConfig {
   top_n: number;
   bottom_n: number;
   zero_conversion_n: number;
+  /** Legacy key — shell falls back to this when zero_conversion_n is absent */
+  zero_purchase_n?: number;
 }
 
 /**

@@ -97,7 +97,7 @@ export function computeCreativeRanking(
   const minSpend = targets.global?.min_spend ?? 0;
   const topN = config.analysis?.top_n ?? 15;
   const bottomN = config.analysis?.bottom_n ?? 10;
-  const zeroN = config.analysis?.zero_conversion_n ?? 10;
+  const zeroN = config.analysis?.zero_conversion_n ?? config.analysis?.zero_purchase_n ?? 10;
   const objectives = [...new Set(ads.map((a) => a.objective))].sort();
 
   const analysis: CreativeAnalysis = { objectives_present: objectives };
