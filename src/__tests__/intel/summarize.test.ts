@@ -89,6 +89,52 @@ describe('campaigns', () => {
     expect(result[0].objective).toBe('UNKNOWN');
   });
 
+  it('produces correct values for all 32 fields', async () => {
+    writeJson('campaigns-meta.json', { data: [{ id: '1', objective: 'CONVERSIONS' }] });
+    writeJson('campaigns.json', { data: [makeRow({ campaign_id: '1', campaign_name: 'Full Test' })] });
+
+    await summarize(tmpDir);
+    const result = readOutput('campaigns-summary.json') as Record<string, unknown>[];
+
+    expect(result[0]).toEqual({
+      // ExtractedMetrics (21 fields)
+      spend: 100,
+      impressions: 5000,
+      clicks: 150,
+      cpc: 0.67,
+      ctr: 3.0,
+      cpm: 20.1,
+      frequency: 1.5,
+      reach: 3333,
+      purchases: 5,
+      revenue: 250,
+      roas: 2.5,
+      add_to_cart: 0,
+      initiate_checkout: 0,
+      view_content: 0,
+      link_clicks: 0,
+      landing_page_views: 0,
+      post_engagement: 0,
+      page_engagement: 0,
+      lead: 0,
+      app_install: 0,
+      video_view: 0,
+      // DerivedMetrics (6 fields)
+      cpa: 20,         // 100 / 5
+      cpe: null,        // post_engagement = 0
+      cpl: null,        // lead = 0
+      cpi: null,        // app_install = 0
+      link_click_ctr: 0, // link_clicks = 0
+      link_click_cpc: null, // link_clicks = 0
+      // Entity fields (5 fields)
+      campaign_id: '1',
+      campaign_name: 'Full Test',
+      objective: 'OUTCOME_SALES',
+      date_start: '2026-03-01',
+      date_stop: '2026-03-14',
+    });
+  });
+
   it('handles bare array format (no .data wrapper)', async () => {
     writeJson('campaigns-meta.json', [{ id: '50', objective: 'LINK_CLICKS' }]);
     writeJson('campaigns.json', [makeRow({ campaign_id: '50', campaign_name: 'Bare' })]);
@@ -192,7 +238,7 @@ describe('ads', () => {
 
     await summarize(tmpDir);
     const result = readOutput('ads-summary.json') as Record<string, unknown>[];
-    expect(result[0].ad_id).toBe('');
+    expect(result[0].ad_id).toBeNull();
     expect(result[0].creative_body).toBe('');
     expect(result[0].creative_title).toBe('');
   });
@@ -232,6 +278,18 @@ describe('edge cases', () => {
     expect(fs.existsSync(path.join(tmpDir, 'campaigns-summary.json'))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, 'adsets-summary.json'))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, 'ads-summary.json'))).toBe(true);
+  });
+
+  it('skips malformed JSON files without crashing', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'campaigns.json'), '{not valid json');
+    fs.writeFileSync(path.join(tmpDir, 'adsets.json'), '{{broken');
+    fs.writeFileSync(path.join(tmpDir, 'ads.json'), '');
+
+    await summarize(tmpDir);
+
+    expect(fs.existsSync(path.join(tmpDir, 'campaigns-summary.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, 'adsets-summary.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, 'ads-summary.json'))).toBe(false);
   });
 
   it('handles empty directory — no files created, no error', async () => {

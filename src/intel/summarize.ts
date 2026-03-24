@@ -4,6 +4,11 @@ import type { InsightsRow, CampaignSummary, AdsetSummary, AdSummary } from './ty
 import { extractMetrics, addDerived } from './metrics.js';
 import { normalizeObjective } from './objective-map.js';
 
+/** Matches jq's `// null` — preserves null for missing/undefined values. */
+function toNullableString(val: unknown): string | null {
+  return val != null ? String(val) : null;
+}
+
 /**
  * Handles Meta API's two response formats: {data: [...]} and bare [...].
  * Matches jq's (.data // .)[] pattern.
@@ -40,6 +45,9 @@ function buildObjectiveLookup(dir: string): Record<string, string> {
 /**
  * Reads creatives.json, builds ad_id → {creative_body, creative_title} map.
  * Returns {} if file missing or parse fails.
+ *
+ * Note: creatives.json entries use `.id` which is the *ad* ID (not creative_id).
+ * This matches the insights row's `ad_id` field for lookup.
  */
 function buildCreativeLookup(dir: string): Record<string, { creative_body: string; creative_title: string }> {
   const filePath = path.join(dir, 'creatives.json');
@@ -78,62 +86,68 @@ export async function summarize(dir: string): Promise<void> {
   // Summarize campaigns
   const campaignsPath = path.join(dir, 'campaigns.json');
   if (fs.existsSync(campaignsPath)) {
-    const raw = JSON.parse(fs.readFileSync(campaignsPath, 'utf-8'));
-    const rows = unwrapData(raw);
-    const result: CampaignSummary[] = rows.map((row) => ({
-      ...addDerived(extractMetrics(row as InsightsRow)),
-      campaign_id: String(row.campaign_id ?? ''),
-      campaign_name: String(row.campaign_name ?? ''),
-      objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
-      date_start: String(row.date_start ?? ''),
-      date_stop: String(row.date_stop ?? ''),
-    }));
-    fs.writeFileSync(path.join(dir, 'campaigns-summary.json'), JSON.stringify(result, null, 2));
+    try {
+      const raw = JSON.parse(fs.readFileSync(campaignsPath, 'utf-8'));
+      const rows = unwrapData(raw);
+      const result: CampaignSummary[] = rows.map((row) => ({
+        ...addDerived(extractMetrics(row as InsightsRow)),
+        campaign_id: toNullableString(row.campaign_id),
+        campaign_name: toNullableString(row.campaign_name),
+        objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
+        date_start: String(row.date_start ?? ''),
+        date_stop: String(row.date_stop ?? ''),
+      }));
+      fs.writeFileSync(path.join(dir, 'campaigns-summary.json'), JSON.stringify(result, null, 2));
+    } catch { /* skip on malformed JSON — same as file missing */ }
   }
 
   // Summarize adsets
   const adsetsPath = path.join(dir, 'adsets.json');
   if (fs.existsSync(adsetsPath)) {
-    const raw = JSON.parse(fs.readFileSync(adsetsPath, 'utf-8'));
-    const rows = unwrapData(raw);
-    const result: AdsetSummary[] = rows.map((row) => ({
-      ...addDerived(extractMetrics(row as InsightsRow)),
-      adset_id: String(row.adset_id ?? ''),
-      adset_name: String(row.adset_name ?? ''),
-      campaign_id: String(row.campaign_id ?? ''),
-      campaign_name: String(row.campaign_name ?? ''),
-      objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
-      date_start: String(row.date_start ?? ''),
-      date_stop: String(row.date_stop ?? ''),
-    }));
-    fs.writeFileSync(path.join(dir, 'adsets-summary.json'), JSON.stringify(result, null, 2));
+    try {
+      const raw = JSON.parse(fs.readFileSync(adsetsPath, 'utf-8'));
+      const rows = unwrapData(raw);
+      const result: AdsetSummary[] = rows.map((row) => ({
+        ...addDerived(extractMetrics(row as InsightsRow)),
+        adset_id: toNullableString(row.adset_id),
+        adset_name: toNullableString(row.adset_name),
+        campaign_id: toNullableString(row.campaign_id),
+        campaign_name: toNullableString(row.campaign_name),
+        objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
+        date_start: String(row.date_start ?? ''),
+        date_stop: String(row.date_stop ?? ''),
+      }));
+      fs.writeFileSync(path.join(dir, 'adsets-summary.json'), JSON.stringify(result, null, 2));
+    } catch { /* skip on malformed JSON — same as file missing */ }
   }
 
   // Summarize ads
   const adsPath = path.join(dir, 'ads.json');
   if (fs.existsSync(adsPath)) {
-    const creatives = buildCreativeLookup(dir);
-    const raw = JSON.parse(fs.readFileSync(adsPath, 'utf-8'));
-    const rows = unwrapData(raw);
-    const result: AdSummary[] = rows.map((row) => {
-      const adId = String(row.ad_id ?? '');
-      const creative = adId && creatives[adId]
-        ? creatives[adId]
-        : { creative_body: '', creative_title: '' };
-      return {
-        ...addDerived(extractMetrics(row as InsightsRow)),
-        ad_id: adId,
-        ad_name: String(row.ad_name ?? ''),
-        adset_id: String(row.adset_id ?? ''),
-        campaign_id: String(row.campaign_id ?? ''),
-        campaign_name: String(row.campaign_name ?? ''),
-        objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
-        date_start: String(row.date_start ?? ''),
-        date_stop: String(row.date_stop ?? ''),
-        creative_body: creative.creative_body,
-        creative_title: creative.creative_title,
-      };
-    });
-    fs.writeFileSync(path.join(dir, 'ads-summary.json'), JSON.stringify(result, null, 2));
+    try {
+      const creatives = buildCreativeLookup(dir);
+      const raw = JSON.parse(fs.readFileSync(adsPath, 'utf-8'));
+      const rows = unwrapData(raw);
+      const result: AdSummary[] = rows.map((row) => {
+        const lookupKey = String(row.ad_id ?? '');
+        const creative = lookupKey && creatives[lookupKey]
+          ? creatives[lookupKey]
+          : { creative_body: '', creative_title: '' };
+        return {
+          ...addDerived(extractMetrics(row as InsightsRow)),
+          ad_id: toNullableString(row.ad_id),
+          ad_name: toNullableString(row.ad_name),
+          adset_id: toNullableString(row.adset_id),
+          campaign_id: toNullableString(row.campaign_id),
+          campaign_name: toNullableString(row.campaign_name),
+          objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
+          date_start: String(row.date_start ?? ''),
+          date_stop: String(row.date_stop ?? ''),
+          creative_body: creative.creative_body,
+          creative_title: creative.creative_title,
+        };
+      });
+      fs.writeFileSync(path.join(dir, 'ads-summary.json'), JSON.stringify(result, null, 2));
+    } catch { /* skip on malformed JSON — same as file missing */ }
   }
 }
