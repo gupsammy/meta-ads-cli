@@ -1,13 +1,13 @@
 # meta-ads-cli
 
-CLI for the Meta (Facebook) Marketing API v21.0. Manages ad accounts, campaigns, ad sets, ads, insights, and custom audiences.
+CLI for the Meta (Facebook) Marketing API v21.0. Manages ad accounts, campaigns, ad sets, ads, insights, custom audiences, and runs the Intel analysis pipeline.
 
 ## Development Commands
 
 ```bash
 pnpm build        # compile with tsup → dist/
 pnpm dev          # tsup --watch
-pnpm test         # vitest run (71 tests across 12 files)
+pnpm test         # vitest run (249 tests across 18 files)
 pnpm lint         # eslint src/
 pnpm typecheck    # tsc --noEmit
 ```
@@ -21,6 +21,15 @@ src/
   index.ts              # entry point, registers all commands
   auth.ts               # resolveAccessToken, saveToken, exchangeForLongLivedToken, OAuth flow
   commands/             # one file per subcommand group (+ setup, update, uninstall)
+  intel/                # analysis pipeline (ported from shell scripts)
+    pull.ts             # full pipeline orchestrator: fetch → summarize → prepare
+    summarize.ts        # compresses raw API JSON into *-summary.json files
+    prepare/            # generates analysis outputs (account-health, budget-actions, funnel, trends, creative-analysis)
+    scan.ts             # creative scan for onboarding
+    defaults.ts         # compute target defaults from current performance
+    metrics.ts          # extractMetrics + deriveMetrics — 27-field extraction from Meta API rows
+    types.ts            # all Intel type definitions (API shapes, summaries, analysis outputs)
+    objective-map.ts    # maps Meta objective strings to KPI sets
   lib/
     config.ts           # ConfigManager — reads/writes ~/.config/meta-ads-cli/config.json
     constants.ts        # API_VERSION, DESTRUCTIVE_STATUSES
@@ -38,59 +47,36 @@ Required permissions: `ads_management`, `ads_read`.
 
 ## Command Inventory
 
-### auth
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `auth login` | Authenticate | None | `--token`, `--app-id` (secret via env), `-o` |
-| `auth status` | Show auth status | None | `-o` |
-| `auth logout` | Remove credentials | None | `--force`, `-o` |
+### Core commands
 
-### accounts
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `accounts list` | List ad accounts | None | `--access-token`, `--limit`, `--after`, `-o`, `-v` |
-| `accounts get` | Get account details | `--account-id` | `--access-token`, `-o`, `-v` |
+`auth login|status|logout`, `accounts list|get`, `campaigns list|get|create|update`, `adsets list|get|create|update`, `ads list|get|update`, `insights get`, `audiences list|get`, `setup`, `update`, `uninstall`.
 
-### campaigns
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `campaigns list` | List campaigns | `--account-id` | `--status`, `--limit`, `--after`, `--access-token`, `-o`, `-v` |
-| `campaigns get` | Get campaign | `--campaign-id` | `--access-token`, `-o`, `-v` |
-| `campaigns create` | Create campaign | `--account-id`, `--name`, `--objective` | `--status`, `--daily-budget`, `--lifetime-budget`, `--special-ad-categories`, `--dry-run`, `--access-token`, `-o`, `-v` |
-| `campaigns update` | Update campaign | `--campaign-id` | `--name`, `--status`, `--daily-budget`, `--lifetime-budget`, `--force`, `--dry-run`, `--access-token`, `-o`, `-v` |
+All list commands accept `--limit`, `--after`, `--access-token`, `-o`, `-v`. Create/update commands accept `--dry-run`. See `meta-ads <command> --help` for full flag details.
 
-### adsets
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `adsets list` | List ad sets | `--account-id` | `--campaign-id`, `--status`, `--limit`, `--after`, `--access-token`, `-o`, `-v` |
-| `adsets get` | Get ad set | `--adset-id` | `--access-token`, `-o`, `-v` |
-| `adsets create` | Create ad set | `--account-id`, `--campaign-id`, `--name`, `--billing-event`, `--optimization-goal` | `--daily-budget`, `--lifetime-budget`, `--bid-amount`, `--targeting`, `--start-time`, `--end-time`, `--status`, `--dry-run`, `--access-token`, `-o`, `-v` |
-| `adsets update` | Update ad set | `--adset-id` | `--name`, `--status`, `--daily-budget`, `--lifetime-budget`, `--bid-amount`, `--targeting`, `--force`, `--dry-run`, `--access-token`, `-o`, `-v` |
+### intel (hidden)
 
-### ads
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `ads list` | List ads | `--account-id` | `--adset-id`, `--campaign-id`, `--status`, `--limit`, `--after`, `--access-token`, `-o`, `-v` |
-| `ads get` | Get ad details | `--ad-id` | `--access-token`, `-o`, `-v` |
-| `ads update` | Update ad | `--ad-id` | `--name`, `--status`, `--force`, `--dry-run`, `--access-token`, `-o`, `-v` |
+| Command | Description | Args |
+|---------|-------------|------|
+| `intel run [date-preset]` | Full pipeline: fetch → summarize → prepare | Default `last_14d`. Options: `last_7d`, `last_14d`, `last_30d` |
+| `intel defaults` | Compute target KPI defaults | `--account-id`, `--access-token` |
+| `intel scan` | Creative scan for onboarding | `--account-id`, `--access-token` |
 
-### insights
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `insights get` | Get insights | At least one of: `--account-id`, `--campaign-id`, `--adset-id`, `--ad-id` | `--date-preset`, `--since`, `--until`, `--level`, `--fields`, `--time-increment`, `--limit`, `--access-token`, `-o`, `-v` |
+## Intel Pipeline
 
-### audiences
-| Command | Description | Required Args | Optional Args |
-|---------|-------------|---------------|---------------|
-| `audiences list` | List audiences | `--account-id` | `--limit`, `--after`, `--access-token`, `-o`, `-v` |
-| `audiences get` | Get audience | `--audience-id` | `--access-token`, `-o`, `-v` |
+`intel run` orchestrates a full data pull + analysis. It fetches campaigns, ad sets, ads (with creatives), and insights from the Meta API in parallel, then runs `summarize` (compress raw JSON to summaries) and `prepare` (generate analysis files).
 
-### setup / update / uninstall
-| Command | Description | Optional Args |
-|---------|-------------|---------------|
-| `setup` | Interactive guided setup (token, account selection) | `-o` |
-| `update` | Update CLI to latest version | `--check`, `-o` |
-| `uninstall` | Remove CLI and config | `--keep-config`, `--force`, `-o` |
+Data directory: `META_ADS_DATA_DIR` env → `~/.meta-ads-intel/data/`. Each run creates a timestamped subdirectory (`YYYY-MM-DD_HHMM/`). A `_recent_raw/` symlink always points to the latest raw data.
+
+Account ID resolution: `--account-id` option → `META_ADS_ACCOUNT_ID` env → `~/.meta-ads-intel/config.json` → CLI config's `default_account_id`.
+
+Key behaviors:
+- Sets `umask 077` during execution (ad spend data is sensitive) — restored in `finally`.
+- Directory-based lock at `{dataDir}/.pull-lock/` prevents concurrent runs. Stale locks auto-removed after 30 minutes.
+- `campaigns-summary.json` is required after summarize — missing it is a hard error.
+- Symlinks (`campaigns-master.json`, `creatives-master.json`, `account-master.json`) use force-overwrite to handle same-minute re-runs.
+- `config.json` keys are auto-migrated from v1 → v2 format on each run.
+
+Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `creative-media.json`, `pipeline-status.json`.
 
 ## Non-Obvious Behaviors
 
@@ -101,6 +87,7 @@ Required permissions: `ads_management`, `ads_read`.
 - Auto-retry covers HTTP 429 and 5xx — exponential backoff up to 3 retries; `retryAfter` header honored.
 - Budgets are in the account's minor currency unit (cents for USD, paisa for INR) — divide by 100 for display.
 - `campaigns create` default status is `PAUSED` — campaigns do not go live automatically.
+- Intel metrics use omni-first extraction (`omni_purchase` preferred over `purchase`) with base fallback. See `metrics.ts` for the full action-type priority.
 
 ## Output Format
 
@@ -109,6 +96,7 @@ Required permissions: `ads_management`, `ads_read`.
 - Errors (stderr): `{"error": "CODE", "message": "...", "hint": "..."}`
 - Always use `.data[]` not `.[]` when parsing list output with jq.
 - `ads list`/`ads get` include flattened creative fields: `creative_id`, `creative_title`, `creative_body`, `creative_image_url`, `creative_thumbnail_url`.
+- `intel run` returns `{"run_dir": "...", "status": "complete|partial", "files_produced": [...], "warnings": [...]}`.
 
 ## Destructive Operations
 
