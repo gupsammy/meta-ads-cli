@@ -2,13 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { creativeScan } from '../../intel/scan.js';
 
 vi.mock('../../lib/http.js', () => ({
-  graphRequestWithRetry: vi.fn(),
   paginateAll: vi.fn(),
 }));
 
-import { graphRequestWithRetry, paginateAll } from '../../lib/http.js';
+import { paginateAll } from '../../lib/http.js';
 
-const mockGraphRequest = vi.mocked(graphRequestWithRetry);
 const mockPaginate = vi.mocked(paginateAll);
 
 function makeAd(id: string, creative?: { title?: string; body?: string; image_url?: string; thumbnail_url?: string }) {
@@ -43,9 +41,9 @@ function setupMocks(
   ads: { id: string; name?: string; creative?: Record<string, string> }[],
   campaigns: { id: string; objective: string }[],
 ) {
-  mockGraphRequest.mockResolvedValue({ data: insights });
-  // paginateAll is called twice: first for ads, then for campaigns
+  // paginateAll is called three times: insights, ads, campaigns (via Promise.all)
   mockPaginate
+    .mockResolvedValueOnce({ data: insights, has_more: false })
     .mockResolvedValueOnce({ data: ads, has_more: false })
     .mockResolvedValueOnce({ data: campaigns, has_more: false });
 }
@@ -64,7 +62,7 @@ describe('creativeScan', () => {
       [makeAd('1', { image_url: 'http://img1' }), makeAd('2', { image_url: 'http://img2' })],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const sales = result.by_objective['OUTCOME_SALES'];
     expect(sales.winners[0].roas).toBe(5.0); // Ad 2 has higher roas
     expect(sales.winners.length).toBe(1);
@@ -81,7 +79,7 @@ describe('creativeScan', () => {
       [makeAd('1'), makeAd('2')],
       [makeCampaign('c1', 'LINK_CLICKS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const traffic = result.by_objective['OUTCOME_TRAFFIC'];
     expect(traffic.winners[0].link_click_ctr).toBe(5); // 500/10000*100
     expect(traffic.losers[0].link_click_ctr).toBe(2); // 200/10000*100
@@ -96,7 +94,7 @@ describe('creativeScan', () => {
       [makeAd('1'), makeAd('2')],
       [makeCampaign('c1', 'POST_ENGAGEMENT')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const eng = result.by_objective['OUTCOME_ENGAGEMENT'];
     // Ad 1: cpe=0.5, 1/cpe=2. Ad 2: cpe=2, 1/cpe=0.5
     expect(eng.winners[0].cpe).toBe(0.5);
@@ -112,7 +110,7 @@ describe('creativeScan', () => {
       [makeAd('1'), makeAd('2')],
       [makeCampaign('c1', 'LEAD_GENERATION')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const leads = result.by_objective['OUTCOME_LEADS'];
     expect(leads.winners[0].cpl).toBe(10); // 100/10 — cheaper cost per lead wins
     expect(leads.losers[0].cpl).toBe(50);
@@ -127,7 +125,7 @@ describe('creativeScan', () => {
       [makeAd('1'), makeAd('2')],
       [makeCampaign('c1', 'APP_INSTALLS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const app = result.by_objective['OUTCOME_APP_PROMOTION'];
     expect(app.winners[0].cpi).toBe(5); // 100/20
     expect(app.losers[0].cpi).toBe(20); // 100/5
@@ -142,7 +140,7 @@ describe('creativeScan', () => {
       [makeAd('1'), makeAd('2')],
       [makeCampaign('c1', 'REACH')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const awareness = result.by_objective['OUTCOME_AWARENESS'];
     // Ad 1: 1/10 = 0.1, Ad 2: 1/20 = 0.05 → Ad 1 wins (lower CPM is better)
     expect(awareness.winners.length).toBe(1);
@@ -155,7 +153,7 @@ describe('creativeScan', () => {
       [makeAd('1')],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const sales = result.by_objective['OUTCOME_SALES'];
     expect(sales.winners.length).toBe(1);
     expect(sales.losers.length).toBe(0);
@@ -171,7 +169,7 @@ describe('creativeScan', () => {
       [makeAd('1'), makeAd('2'), makeAd('3')],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const sales = result.by_objective['OUTCOME_SALES'];
     expect(sales.winners.length).toBe(1); // floor(3/2)=1
     expect(sales.losers.length).toBe(2); // min(5, 3-1)=2
@@ -188,7 +186,7 @@ describe('creativeScan', () => {
     );
     const ads = Array.from({ length: 10 }, (_, i) => makeAd(String(i + 1)));
     setupMocks(insights, ads, [makeCampaign('c1', 'CONVERSIONS')]);
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const sales = result.by_objective['OUTCOME_SALES'];
     expect(sales.winners.length).toBe(5);
     expect(sales.losers.length).toBe(5);
@@ -200,7 +198,7 @@ describe('creativeScan', () => {
       [makeAd('1', { thumbnail_url: 'http://thumb.jpg', image_url: 'http://img.jpg' })],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     expect(result.by_objective['OUTCOME_SALES'].winners[0].format).toBe('video');
   });
 
@@ -210,7 +208,7 @@ describe('creativeScan', () => {
       [makeAd('1', { image_url: 'http://img.jpg' })],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     expect(result.by_objective['OUTCOME_SALES'].winners[0].format).toBe('image');
   });
 
@@ -220,7 +218,7 @@ describe('creativeScan', () => {
       [makeAd('1')],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     expect(result.by_objective['OUTCOME_SALES'].winners[0].format).toBe('unknown');
     expect(result.format_breakdown.unknown).toBe(1);
     expect(result.format_breakdown.confidence).toBe('low'); // 1/1 > 0.3
@@ -242,7 +240,7 @@ describe('creativeScan', () => {
       ],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     expect(result.format_breakdown.confidence).toBe('high'); // 1/4 = 25% < 30%
   });
 
@@ -252,7 +250,7 @@ describe('creativeScan', () => {
       [makeAd('1', { title: 'Great Ad', body: 'Buy now!', image_url: 'http://img.jpg' })],
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const winner = result.by_objective['OUTCOME_SALES'].winners[0];
     expect(winner.creative_title).toBe('Great Ad');
     expect(winner.creative_body).toBe('Buy now!');
@@ -264,7 +262,7 @@ describe('creativeScan', () => {
       [], // no ads in lookup
       [makeCampaign('c1', 'CONVERSIONS')],
     );
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     const winner = result.by_objective['OUTCOME_SALES'].winners[0];
     expect(winner.creative_title).toBe('');
     expect(winner.creative_body).toBe('');
@@ -272,7 +270,7 @@ describe('creativeScan', () => {
 
   it('handles empty insights', async () => {
     setupMocks([], [makeAd('1')], [makeCampaign('c1', 'CONVERSIONS')]);
-    const result = await creativeScan('123', 'token');
+    const result = await creativeScan('act_123', 'token');
     expect(result.by_objective).toEqual({});
     expect(result.total_ads).toBe(0);
     expect(result.format_breakdown.confidence).toBe('n/a');

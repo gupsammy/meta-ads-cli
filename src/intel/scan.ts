@@ -1,4 +1,4 @@
-import { graphRequestWithRetry, paginateAll, type GraphApiResponse } from '../lib/http.js';
+import { paginateAll } from '../lib/http.js';
 import { attrGuard, omniFirst, round2 } from './metrics.js';
 import { normalizeObjective } from './objective-map.js';
 import type { InsightsRow, ScanResult, ScanAdEntry, ScanObjectiveGroup, FormatBreakdown } from './types.js';
@@ -64,25 +64,26 @@ interface JoinedAd {
  * Creative scan for onboarding — ranks ads by objective-appropriate metric.
  * Port of onboard-scan.sh — fetches ad-level insights, ads with creatives,
  * and campaigns in parallel, then joins and ranks per objective.
+ * @param accountId Full account ID with act_ prefix (e.g. "act_123456")
  */
 export async function creativeScan(
   accountId: string,
   accessToken: string,
 ): Promise<ScanResult> {
-  // 1. Parallel fetch: insights, ads with creatives, campaigns
-  const [insightsResponse, adsResult, campaignsResult] = await Promise.all([
-    graphRequestWithRetry<GraphApiResponse<InsightsRow>>(
-      `/act_${accountId}/insights`,
+  // 1. Parallel fetch: insights (paginated), ads with creatives, campaigns
+  const [insightsResult, adsResult, campaignsResult] = await Promise.all([
+    paginateAll<InsightsRow>(
+      `/${accountId}/insights`,
       accessToken,
       { params: { date_preset: 'last_14d', level: 'ad', fields: SCAN_FIELDS, limit: '200' } },
     ),
     paginateAll<AdRow>(
-      `/act_${accountId}/ads`,
+      `/${accountId}/ads`,
       accessToken,
       { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}', limit: '200' } },
     ),
     paginateAll<CampaignRow>(
-      `/act_${accountId}/campaigns`,
+      `/${accountId}/campaigns`,
       accessToken,
       { params: { fields: 'id,objective', limit: '200' } },
     ),
@@ -106,7 +107,7 @@ export async function creativeScan(
   }
 
   // 4. Join insights with lookups, compute metrics
-  const rows = insightsResponse.data ?? [];
+  const rows = insightsResult.data;
   const joined: JoinedAd[] = rows.map((row) => {
     const aid = String(row.ad_id ?? '');
     const cid = String(row.campaign_id ?? '');
@@ -131,10 +132,10 @@ export async function creativeScan(
     const lead = omniFirst(actions, ['onsite_conversion.lead_grouped', 'lead']);
     const app_install = omniFirst(actions, ['omni_app_install', 'mobile_app_install', 'app_install']);
 
-    const cpa = purchases > 0 ? spend / purchases : null;
-    const cpe = post_engagement > 0 ? spend / post_engagement : null;
-    const cpl = lead > 0 ? spend / lead : null;
-    const cpi = app_install > 0 ? spend / app_install : null;
+    const cpa = purchases > 0 ? round2(spend / purchases) : null;
+    const cpe = post_engagement > 0 ? round2(spend / post_engagement) : null;
+    const cpl = lead > 0 ? round2(spend / lead) : null;
+    const cpi = app_install > 0 ? round2(spend / app_install) : null;
     const link_click_ctr = impressions > 0 ? round2(link_clicks / impressions * 100) : 0;
     const link_click_cpc = link_clicks > 0 ? round2(spend / link_clicks) : null;
 

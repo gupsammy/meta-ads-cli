@@ -3,13 +3,11 @@ import { computeDefaults } from '../../intel/defaults.js';
 
 // Mock the HTTP layer
 vi.mock('../../lib/http.js', () => ({
-  graphRequestWithRetry: vi.fn(),
   paginateAll: vi.fn(),
 }));
 
-import { graphRequestWithRetry, paginateAll } from '../../lib/http.js';
+import { paginateAll } from '../../lib/http.js';
 
-const mockGraphRequest = vi.mocked(graphRequestWithRetry);
 const mockPaginate = vi.mocked(paginateAll);
 
 function makeCampaign(id: string, objective: string) {
@@ -39,8 +37,10 @@ beforeEach(() => {
 });
 
 function setupMocks(campaigns: { id: string; objective: string }[], insights: Record<string, unknown>[]) {
-  mockPaginate.mockResolvedValue({ data: campaigns, has_more: false });
-  mockGraphRequest.mockResolvedValue({ data: insights });
+  // paginateAll called twice: first for campaigns, then for insights
+  mockPaginate
+    .mockResolvedValueOnce({ data: campaigns, has_more: false })
+    .mockResolvedValueOnce({ data: insights, has_more: false });
 }
 
 describe('computeDefaults', () => {
@@ -53,7 +53,7 @@ describe('computeDefaults', () => {
         purchase_roas: [{ action_type: 'omni_purchase', value: '0.5' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     expect(result.objectives['OUTCOME_SALES']).toEqual({
       campaign_count: 1,
       spend: 1000,
@@ -73,7 +73,7 @@ describe('computeDefaults', () => {
         actions: [{ action_type: 'link_click', value: '200' }, { action_type: 'landing_page_view', value: '150' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const traffic = result.objectives['OUTCOME_TRAFFIC'];
     expect(traffic.link_clicks).toBe(200);
     expect(traffic.landing_page_views).toBe(150);
@@ -88,7 +88,7 @@ describe('computeDefaults', () => {
         actions: [{ action_type: 'video_view', value: '5000' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const awareness = result.objectives['OUTCOME_AWARENESS'];
     expect(awareness.impressions).toBe(50000);
     expect(awareness.reach).toBe(30000);
@@ -105,7 +105,7 @@ describe('computeDefaults', () => {
         actions: [{ action_type: 'post_engagement', value: '2000' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const eng = result.objectives['OUTCOME_ENGAGEMENT'];
     expect(eng.post_engagement).toBe(2000);
     expect(eng.current_cpe).toBe(0.5); // 1000/2000
@@ -119,7 +119,7 @@ describe('computeDefaults', () => {
         actions: [{ action_type: 'lead', value: '20' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const leads = result.objectives['OUTCOME_LEADS'];
     expect(leads.leads).toBe(20);
     expect(leads.current_cpl).toBe(50); // 1000/20
@@ -132,7 +132,7 @@ describe('computeDefaults', () => {
         actions: [{ action_type: 'app_install', value: '100' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const app = result.objectives['OUTCOME_APP_PROMOTION'];
     expect(app.app_installs).toBe(100);
     expect(app.current_cpi).toBe(10); // 1000/100
@@ -155,7 +155,7 @@ describe('computeDefaults', () => {
         }),
       ],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     expect(result.objectives_detected).toEqual(['OUTCOME_SALES', 'OUTCOME_TRAFFIC']);
     expect(result.total_spend).toBe(1000);
     expect(result.objectives['OUTCOME_SALES'].campaign_count).toBe(1);
@@ -167,7 +167,7 @@ describe('computeDefaults', () => {
       [makeCampaign('1', 'SOME_FUTURE_OBJECTIVE')],
       [makeInsightsRow()],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     expect(result.objectives['SOME_FUTURE_OBJECTIVE']).toEqual({
       campaign_count: 1,
       spend: 1000,
@@ -179,7 +179,7 @@ describe('computeDefaults', () => {
       [makeCampaign('1', 'CONVERSIONS')],
       [makeInsightsRow({ actions: [], action_values: [], purchase_roas: [] })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const sales = result.objectives['OUTCOME_SALES'];
     expect(sales.purchases).toBe(0);
     expect(sales.current_cpa).toBeNull();
@@ -188,7 +188,7 @@ describe('computeDefaults', () => {
 
   it('handles empty insights', async () => {
     setupMocks([makeCampaign('1', 'CONVERSIONS')], []);
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     expect(result.objectives).toEqual({});
     expect(result.total_spend).toBe(0);
     expect(result.objectives_detected).toEqual([]);
@@ -203,7 +203,7 @@ describe('computeDefaults', () => {
         action_values: [{ action_type: 'purchase', value: '100' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     expect(result.objectives['OUTCOME_SALES']).toBeDefined();
     expect(result.objectives['OUTCOME_SALES'].campaign_count).toBe(1);
   });
@@ -217,21 +217,21 @@ describe('computeDefaults', () => {
         action_values: [{ action_type: 'omni_purchase', value: '123' }],
       })],
     );
-    const result = await computeDefaults('123', 'token');
+    const result = await computeDefaults('act_123', 'token');
     const sales = result.objectives['OUTCOME_SALES'];
     expect(sales.current_cpa).toBe(47.57); // 333/7 = 47.5714... → 47.57
     expect(sales.current_roas).toBe(0.37); // 123/333 = 0.3693... → 0.37
   });
 
-  it('strips act_ prefix from accountId in API paths', async () => {
+  it('uses full act_ account ID in API paths', async () => {
     setupMocks([makeCampaign('1', 'CONVERSIONS')], [makeInsightsRow()]);
-    await computeDefaults('903322579535495', 'token');
+    await computeDefaults('act_903322579535495', 'token');
     expect(mockPaginate).toHaveBeenCalledWith(
       '/act_903322579535495/campaigns',
       'token',
       expect.any(Object),
     );
-    expect(mockGraphRequest).toHaveBeenCalledWith(
+    expect(mockPaginate).toHaveBeenCalledWith(
       '/act_903322579535495/insights',
       'token',
       expect.any(Object),

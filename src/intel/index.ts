@@ -1,5 +1,5 @@
 import { Command, Option } from 'commander';
-import { requireAccessToken } from '../auth.js';
+import { requireAccessToken, requireAccountId } from '../auth.js';
 import { printOutput, printError, handleCommandError, type OutputFormat, EXIT_RUNTIME } from '../lib/output.js';
 import { computeDefaults } from './defaults.js';
 import { creativeScan } from './scan.js';
@@ -21,13 +21,14 @@ export function registerIntelCommands(program: Command): void {
   intel
     .command('defaults')
     .description('Compute target defaults from current performance')
-    .requiredOption('--account-id <id>', 'Ad account ID')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--access-token <token>', 'Access token')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('json'))
-    .action(async (opts: { accountId: string; accessToken?: string; output: OutputFormat }) => {
+    .action(async (opts: { accountId?: string; accessToken?: string; output: OutputFormat }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const result = await computeDefaults(opts.accountId, token);
+        const accountId = requireAccountId(opts.accountId);
+        const result = await computeDefaults(accountId, token);
         printOutput(result as unknown as Record<string, unknown>, opts.output);
       } catch (error) {
         handleCommandError(error, opts.output);
@@ -37,13 +38,14 @@ export function registerIntelCommands(program: Command): void {
   intel
     .command('scan')
     .description('Creative scan for onboarding')
-    .requiredOption('--account-id <id>', 'Ad account ID')
+    .option('--account-id <id>', 'Ad account ID (e.g., act_123456)')
     .option('--access-token <token>', 'Access token')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('json'))
-    .action(async (opts: { accountId: string; accessToken?: string; output: OutputFormat }) => {
+    .action(async (opts: { accountId?: string; accessToken?: string; output: OutputFormat }) => {
       try {
         const token = requireAccessToken(opts.accessToken);
-        const result = await creativeScan(opts.accountId, token);
+        const accountId = requireAccountId(opts.accountId);
+        const result = await creativeScan(accountId, token);
         printOutput(result as unknown as Record<string, unknown>, opts.output);
       } catch (error) {
         handleCommandError(error, opts.output);

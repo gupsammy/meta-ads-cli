@@ -1,4 +1,4 @@
-import { graphRequestWithRetry, paginateAll, type GraphApiResponse } from '../lib/http.js';
+import { paginateAll } from '../lib/http.js';
 import { extractMetrics, round2 } from './metrics.js';
 import { normalizeObjective } from './objective-map.js';
 import type { InsightsRow, ExtractedMetrics, DefaultsResult, ObjectiveDefaults } from './types.js';
@@ -15,6 +15,7 @@ interface CampaignRow {
  * Compute per-objective KPI defaults from campaign-level insights (last 14 days).
  * Port of compute-defaults.sh — groups campaigns by normalized objective and
  * computes objective-specific KPIs used to seed config targets.
+ * @param accountId Full account ID with act_ prefix (e.g. "act_123456")
  */
 export async function computeDefaults(
   accountId: string,
@@ -22,7 +23,7 @@ export async function computeDefaults(
 ): Promise<DefaultsResult> {
   // 1. Fetch campaigns to build objective lookup
   const campaignsResult = await paginateAll<CampaignRow>(
-    `/act_${accountId}/campaigns`,
+    `/${accountId}/campaigns`,
     accessToken,
     { params: { fields: 'id,objective', limit: '200' } },
   );
@@ -31,13 +32,13 @@ export async function computeDefaults(
     objLookup.set(String(c.id), normalizeObjective(c.objective ?? 'UNKNOWN'));
   }
 
-  // 2. Fetch campaign-level insights
-  const insightsResponse = await graphRequestWithRetry<GraphApiResponse<InsightsRow>>(
-    `/act_${accountId}/insights`,
+  // 2. Fetch campaign-level insights (paginated to handle >200 campaigns)
+  const insightsResult = await paginateAll<InsightsRow>(
+    `/${accountId}/insights`,
     accessToken,
     { params: { date_preset: 'last_14d', level: 'campaign', fields: DEFAULTS_FIELDS, limit: '200' } },
   );
-  const rows = insightsResponse.data ?? [];
+  const rows = insightsResult.data;
 
   // 3. Extract metrics and attach objective
   const enriched = rows.map((row) => {
