@@ -106,6 +106,7 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     if (fs.existsSync(creativesPath)) {
       const raw = readJsonSafe<Record<string, unknown>>(creativesPath);
       if (raw) {
+        // Pull phase produces {data: [...]}, but handle bare array defensively
         const entries = Array.isArray(raw) ? raw : (raw as Record<string, unknown>).data;
         if (Array.isArray(entries)) {
           for (const e of entries as Record<string, unknown>[]) {

@@ -11,6 +11,8 @@ interface ObjMeta {
 function objMeta(obj: string): ObjMeta {
   if (obj === 'OUTCOME_SALES') return { conv: 'purchases', sort: 'roas', dir: 'desc', zero_label: 'zero_purchase' };
   if (obj === 'OUTCOME_TRAFFIC') return { conv: 'link_clicks', sort: 'link_click_ctr', dir: 'desc', zero_label: 'zero_clicks' };
+  // Note: image-only awareness ads have video_view=0 by definition — they land in
+  // zero_conversion but are not necessarily underperforming. Agents should consider this.
   if (obj === 'OUTCOME_AWARENESS') return { conv: 'video_view', sort: 'cpm', dir: 'asc', zero_label: 'zero_views' };
   if (obj === 'OUTCOME_ENGAGEMENT') return { conv: 'post_engagement', sort: 'cpe', dir: 'asc', zero_label: 'zero_engagement' };
   if (obj === 'OUTCOME_LEADS') return { conv: 'lead', sort: 'cpl', dir: 'asc', zero_label: 'zero_leads' };
