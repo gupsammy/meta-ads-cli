@@ -148,7 +148,7 @@ function migrateConfigKeys(skillConfigPath: string): void {
 /** Atomically replace a symlink (like ln -sf). Removes existing target first. */
 function forceSymlink(target: string, linkPath: string): void {
   try { fs.unlinkSync(linkPath); } catch { /* doesn't exist */ }
-  fs.symlinkSync(target, linkPath);
+  fs.symlinkSync(path.relative(path.dirname(linkPath), target), linkPath);
 }
 
 /** Adds warning if data length >= limit (possible truncation). */
