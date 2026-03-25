@@ -371,6 +371,27 @@ export interface CreativeMediaEntry {
 /** creative-media.json is a flat array */
 export type CreativeMedia = CreativeMediaEntry[];
 
+// ─── Pull types (raw API response shapes) ─────────────────────────
+
+/** Raw campaign row from /{accountId}/campaigns (metadata, not insights) */
+export interface CampaignMetaRow {
+  id: string;
+  objective?: string;
+}
+
+/** Raw ad row from /{accountId}/ads with nested creative fields */
+export interface AdCreativeRow {
+  id: string;
+  name?: string;
+  creative?: {
+    id?: string;
+    title?: string;
+    body?: string;
+    image_url?: string;
+    thumbnail_url?: string;
+  };
+}
+
 /** pipeline-status.json — status, files_produced, files_skipped, warnings */
 export interface PipelineStatus {
   status: 'complete' | 'partial';
