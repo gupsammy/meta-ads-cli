@@ -33,7 +33,7 @@ The CLI handles all data pulling, summarization, and computation. The pipeline p
 │       ├── _raw/          # raw API responses — NEVER read these
 │       ├── _summaries/    # intermediate summaries — NEVER read these
 │       ├── _recent/       # recent window summaries (for trends)
-│       ├── account-health.json     ── agent reads these 6 ──
+│       ├── account-health.json     ── agent reads these 5 ──
 │       ├── budget-actions.json
 │       ├── funnel.json
 │       ├── trends.json
@@ -80,8 +80,9 @@ If the command fails (auth expired, network, missing account), report error and 
 
 The command outputs JSON to stdout:
 ```json
-{"run_dir": "...", "status": "complete|partial", "files_produced": [...], "files_skipped": [...], "warnings": [...]}
+{"run_dir": "...", "status": "complete|partial", "files_produced": [...], "files_skipped": [...], "warnings": [...], "creatives": {"total_ads": N, "total_frames": N}}
 ```
+The `creatives` field is present only when ffmpeg extracted visual artifacts.
 
 Read `run_dir` from the output — all subsequent reads come from this directory. If `status` is `"partial"`, check `files_skipped` and `warnings` — report missing data to the user before proceeding. Only read files listed in `files_produced`.
 
