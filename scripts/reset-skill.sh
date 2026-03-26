@@ -3,7 +3,7 @@ set -e
 
 # Reset meta-ads-intel to simulate a fresh customer install.
 # Removes: CLI auth, CLI config, skill data, installed skill, global npm package.
-# Preserves: jq, ffmpeg, Node.js, npm.
+# Preserves: ffmpeg, Node.js, npm.
 # Reinstalls: skill files from repo into ~/.claude/skills/.
 #
 # Usage: reset-skill.sh [--repo-dir <path>]
@@ -16,7 +16,7 @@ set -e
 #   meta-ads global npm package — simulates user who hasn't installed the CLI yet
 #
 # What gets reinstalled:
-#   SKILL.md, scripts/, references/  — copied from repo into ~/.claude/skills/
+#   SKILL.md, references/  — copied from repo into ~/.claude/skills/
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="${SCRIPT_DIR}/.."
@@ -83,7 +83,6 @@ fi
 echo "Installing skill from $SKILL_SRC..."
 mkdir -p "$SKILL_DEST"
 cp "$SKILL_SRC/SKILL.md" "$SKILL_DEST/"
-cp -r "$SKILL_SRC/scripts" "$SKILL_DEST/"
 cp -r "$SKILL_SRC/references" "$SKILL_DEST/"
 echo "  done"
 
@@ -94,7 +93,7 @@ echo "  - CLI auth + config ($CLI_CONFIG_DIR)"
 echo "  - meta-ads npm package"
 echo "  - Skill data ($DATA_DIR)"
 echo "  - Installed skill ($SKILL_DEST)"
-echo "Preserved: jq, ffmpeg, Node.js, npm"
+echo "Preserved: ffmpeg, Node.js, npm"
 echo "Reinstalled: skill files from repo"
 echo ""
 echo "Next: run /meta-ads-intel to start onboarding as a fresh customer"

@@ -4,7 +4,7 @@ Machine-readable config (account ID, targets, analysis params) lives in `~/.meta
 
 ## Budget Classification Rules
 
-Applied by `prepare-analysis.sh` to each adset with spend above min_spend threshold. Classification is per-objective — each objective uses its own KPIs and targets.
+Applied to each adset with spend above min_spend threshold. Classification is per-objective — each objective uses its own KPIs and targets.
 
 ### Universal rules (all objectives)
 - Refresh: frequency > max frequency ceiling — audience saturation, needs new creative or audience
@@ -31,7 +31,7 @@ Primary KPIs: CPM. Optional secondary: CPV (for VIDEO_VIEWS campaigns). Targets 
 - Reduce: CPM > target x 1.2
 - Pause: zero impressions (rare)
 - Refresh threshold: uses awareness-specific max_frequency (typically lower, e.g., 3.0)
-- CPV (cost per view): optional secondary KPI for VIDEO_VIEWS campaigns. Computed by compute-defaults.sh and offered as an optional target during onboarding. If `cpv` target is set in config, also evaluate CPV thresholds alongside CPM. If no CPV target is set, CPM-only classification applies.
+- CPV (cost per view): optional secondary KPI for VIDEO_VIEWS campaigns. Computed by `intel defaults` and offered as an optional target during onboarding. If `cpv` target is set in config, also evaluate CPV thresholds alongside CPM. If no CPV target is set, CPM-only classification applies.
 
 ### OUTCOME_ENGAGEMENT
 Primary KPIs: CPE. Targets from `targets.OUTCOME_ENGAGEMENT.{cpe}`. Note: `engagement_rate` (post_engagement/impressions) is computed at analysis time for reporting — it is not a config target.
@@ -56,14 +56,14 @@ Primary KPIs: CPI. Targets from `targets.OUTCOME_APP_PROMOTION.{cpi}`.
 
 ## Legacy Objective Normalization
 
-Scripts normalize legacy objectives to OUTCOME_* equivalents via `references/objective-map.json` (single source of truth). Key mappings: LINK_CLICKS -> OUTCOME_TRAFFIC, CONVERSIONS/PRODUCT_CATALOG_SALES -> OUTCOME_SALES, BRAND_AWARENESS/REACH/VIDEO_VIEWS -> OUTCOME_AWARENESS, POST_ENGAGEMENT/PAGE_LIKES/MESSAGES -> OUTCOME_ENGAGEMENT, LEAD_GENERATION -> OUTCOME_LEADS, APP_INSTALLS -> OUTCOME_APP_PROMOTION.
+The pipeline normalizes legacy objectives to OUTCOME_* equivalents via `references/objective-map.json` (single source of truth). Key mappings: LINK_CLICKS -> OUTCOME_TRAFFIC, CONVERSIONS/PRODUCT_CATALOG_SALES -> OUTCOME_SALES, BRAND_AWARENESS/REACH/VIDEO_VIEWS -> OUTCOME_AWARENESS, POST_ENGAGEMENT/PAGE_LIKES/MESSAGES -> OUTCOME_ENGAGEMENT, LEAD_GENERATION -> OUTCOME_LEADS, APP_INSTALLS -> OUTCOME_APP_PROMOTION.
 
 ## Interpretation Notes
 
 - TOFU campaigns naturally have higher CPA — weight recommendations accordingly. A TOFU campaign classified as "reduce" may still be strategically valuable for pipeline building.
 - BOFU retargeting should have lower CPA and higher ROAS than TOFU. A BOFU campaign classified as "maintain" when it should be "scale" is a missed opportunity.
 - New campaigns (< 7 days) may be in learning phase — flag but don't recommend pausing. Meta's algorithm needs ~50 conversions to exit learning phase.
-- Budget values from the API are in minor currency units (cents/paisa) — divide by 100 for display. Note: analysis files produced by prepare-analysis.sh are already converted to display units; do not double-convert.
+- Budget values from the API are in minor currency units (cents/paisa) — divide by 100 for display. Note: analysis files produced by the pipeline are already converted to display units; do not double-convert.
 - The "refresh" classification means the creative or audience is fatigued, not that the campaign strategy is wrong. Recommend new creative variants or audience expansion, not budget cuts.
 - Cross-objective context: traffic campaigns feed awareness and sales funnels. Evaluate traffic CPC alongside downstream conversion rates, not in isolation.
 - Awareness campaigns with low CPM but high frequency may be saturating audiences — check frequency trend even when CPM is on target.
@@ -71,7 +71,7 @@ Scripts normalize legacy objectives to OUTCOME_* equivalents via `references/obj
 
 ## Funnel Expected Rates
 
-Configurable in `config.json` under `funnel_expected_rates`. These are general e-commerce benchmarks — industry defaults. If not set in config, prepare-analysis.sh uses these hardcoded fallbacks.
+Configurable in `config.json` under `funnel_expected_rates`. These are general e-commerce benchmarks — industry defaults. If not set in config, the pipeline uses these hardcoded fallbacks.
 
 ### OUTCOME_SALES (full 7-stage purchase funnel)
 - Click rate (impression → click): 3.0%
