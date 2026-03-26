@@ -7,7 +7,7 @@ description: >
   advertising data. Not for creating/updating campaigns or writing ad copy.
 license: MIT
 compatibility: >
-  Requires meta-ads CLI (npm i -g meta-ads), jq, and optionally ffmpeg/ffprobe
+  Requires meta-ads CLI (npm i -g meta-ads) and optionally ffmpeg/ffprobe
   for visual creative analysis. Node.js >= 20.
 metadata:
   author: gupsammy
@@ -22,7 +22,7 @@ Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: las
 
 ## Data Architecture
 
-Scripts handle all data pulling, summarization, and computation. The pipeline produces 6 output files; the agent reads 5 directly (creative-media.json is consumed only by analyze-creatives.sh for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
+The CLI handles all data pulling, summarization, and computation. The pipeline produces 6 output files; the agent reads 5 directly (creative-media.json is consumed internally by the pipeline for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
 
 ```
 ~/.meta-ads-intel/
@@ -33,12 +33,12 @@ Scripts handle all data pulling, summarization, and computation. The pipeline pr
 │       ├── _raw/          # raw API responses — NEVER read these
 │       ├── _summaries/    # intermediate summaries — NEVER read these
 │       ├── _recent/       # recent window summaries (for trends)
-│       ├── account-health.json     ── agent reads these 6 ──
+│       ├── account-health.json     ── agent reads these 5 ──
 │       ├── budget-actions.json
 │       ├── funnel.json
 │       ├── trends.json
 │       ├── creative-analysis.json
-│       ├── creative-media.json     # for analyze-creatives.sh only
+│       ├── creative-media.json     # internal pipeline use only
 │       └── pipeline-status.json    # check before reading analysis files
 ├── reports/
 └── creatives/
@@ -48,10 +48,7 @@ Scripts handle all data pulling, summarization, and computation. The pipeline pr
 
 ### 0. Mode Gate
 
-Check config:
-```bash
-jq -e '.account_id' ~/.meta-ads-intel/config.json 2>/dev/null
-```
+Check config — read `~/.meta-ads-intel/config.json` and verify it contains a valid `account_id` field. If the file is missing, unreadable, or lacks `account_id`, enter onboarding mode.
 
 **ONBOARDING MODE** (config missing or invalid):
 Read `references/onboarding.md` and follow that flow completely. Onboarding is a dedicated session — it installs the CLI, collects brand context, auto-detects objectives, runs a creative scan, sets per-objective targets, and writes config.json v2. When onboarding says "Setup complete" — STOP. Do NOT continue to Step 1. The user runs /meta-ads-intel again for their first analysis.
@@ -72,19 +69,22 @@ Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, co
 ### 2. Run Analysis Pipeline
 
 ```bash
-bash <skill-dir>/scripts/run-analysis.sh $ARGUMENTS
+meta-ads intel run $ARGUMENTS -o json
 ```
-`<skill-dir>` is the directory containing this SKILL.md. Resolve from this file's path at runtime.
 
-This single script chains the full pipeline: pull raw API data → summarize → compute 6 analysis files → extract visual creative artifacts (if ffmpeg available). No further scripts to run.
+This command runs the full pipeline: pull raw API data → summarize → compute 6 analysis files → extract visual creative artifacts (if ffmpeg available).
 
-If ffmpeg is not available, the script logs "SKIPPED: ffmpeg/ffprobe not installed" with install instructions. Note this in the analysis — visual creative analysis was skipped, and the user can install ffmpeg (`brew install ffmpeg`) for future runs.
+If ffmpeg is not available, the command logs a note to stderr. Note this in the analysis — visual creative analysis was skipped, and the user can install ffmpeg (`brew install ffmpeg`) for future runs.
 
-If script fails (auth expired, network, missing account), report error and stop.
+If the command fails (auth expired, network, missing account), report error and stop.
 
-Identify the run directory from script output (printed as "Run directory: ..."). All subsequent reads come from this directory.
+The command outputs JSON to stdout:
+```json
+{"run_dir": "...", "status": "complete|partial", "files_produced": [...], "files_skipped": [...], "warnings": [...], "creatives": {"total_ads": N, "total_frames": N}}
+```
+The `creatives` field is present only when ffmpeg extracted visual artifacts.
 
-First, read `pipeline-status.json`. If `status` is `"partial"`, check `files_skipped` and `warnings` — report missing data to the user before proceeding. Only read files listed in `files_produced`.
+Read `run_dir` from the output — all subsequent reads come from this directory. If `status` is `"partial"`, check `files_skipped` and `warnings` — report missing data to the user before proceeding. Only read files listed in `files_produced`.
 
 ### 3. Account Health
 
@@ -106,7 +106,7 @@ Report `total_spend` and spend breakdown across objectives for context. Note: `t
 
 Read `budget-actions.json` from the run directory.
 
-Per-objective sections, each pre-classified by `prepare-analysis.sh` into scale/reduce/pause/refresh/maintain buckets with reason strings. Each objective uses its own KPIs for classification (see `references/thresholds.md`). The agent's job is to add judgment:
+Per-objective sections, each pre-classified into scale/reduce/pause/refresh/maintain buckets with reason strings. Each objective uses its own KPIs for classification (see `references/thresholds.md`). The agent's job is to add judgment:
 
 - Learning phase? New campaigns (< 7 days) classified as "reduce" or "pause" may need protection.
 - Scale recommendations — suggest specific budget increase amounts (e.g., "increase daily budget by 20%").
@@ -180,7 +180,7 @@ For the primary objective (and any other objective with significant spend):
 
 3. Flag zero-conversion ads with their total wasted spend. These are budget leaks — recommend pause or replacement with a winning angle. Note which objective each belongs to.
 
-4. If `~/.meta-ads-intel/creatives/manifest.json` exists (visual artifacts were extracted by run-analysis.sh), read the manifest and then read 2-3 winner frames and 2-3 loser frames via Read tool. Compare visual patterns: opening hooks, text overlays, color palettes, product visibility, video pacing. If manifest doesn't exist, note that visual analysis was skipped (ffmpeg not installed).
+4. If `~/.meta-ads-intel/creatives/manifest.json` exists (visual artifacts were extracted by the pipeline), read the manifest and then read 2-3 winner frames and 2-3 loser frames via Read tool. Compare visual patterns: opening hooks, text overlays, color palettes, product visibility, video pacing. If manifest doesn't exist, note that visual analysis was skipped (ffmpeg not installed).
 
 5. Synthesize: which creative directions should be scaled (new variants in the same angle), which should be killed, and what net-new angles are untested? Note which objective each recommendation applies to.
 
@@ -210,7 +210,7 @@ If this is the user's first analysis, suggest weekly scheduling: "For automated 
 ## Rules
 
 - NEVER read files in `_raw/` directories. These contain verbose API responses with 40+ duplicate action types per row.
-- NEVER read `*-summary.json` files directly. These are intermediate files consumed by `prepare-analysis.sh`.
-- NEVER read `creative-media.json` — it's input for `analyze-creatives.sh` only.
-- Only read the 5 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`. The 6th file (`creative-media.json`) is consumed only by `analyze-creatives.sh`. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
-- All monetary values in analysis files are in the account's currency (not minor units — scripts already convert).
+- NEVER read `*-summary.json` files directly. These are intermediate pipeline files.
+- NEVER read `creative-media.json` — it is consumed internally by the pipeline.
+- Only read the 5 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`. The 6th file (`creative-media.json`) is consumed internally by the pipeline. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
+- All monetary values in analysis files are in the account's currency (not minor units — the pipeline already converts).

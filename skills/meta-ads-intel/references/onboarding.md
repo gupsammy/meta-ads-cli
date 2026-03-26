@@ -12,16 +12,15 @@ When asking questions: use AskUserQuestion tool if available (minimum 2 options 
 
 Check CLI and dependencies:
 ```bash
-which meta-ads && meta-ads --version; which jq; which ffmpeg
+which meta-ads && meta-ads --version; which ffmpeg
 ```
 
-If meta-ads not found — install globally (scripts require `meta-ads` on PATH, npx is not sufficient):
+If meta-ads not found — install globally (`meta-ads` must be on PATH, npx is not sufficient):
 ```bash
 npm i -g meta-ads
 ```
 If npm fails with permissions: suggest `sudo npm i -g meta-ads` or recommend nvm.
 
-If jq missing: `brew install jq` (macOS) or `apt install jq` (Linux).
 If ffmpeg missing: note "ffmpeg not installed — visual creative analysis will be skipped in future runs. Install with `brew install ffmpeg` when ready." NOT blocking.
 
 ### Authentication
@@ -48,16 +47,10 @@ meta-ads setup --non-interactive --token "<token>" --account-id "<account_id>"
 
 Account ID, name, and currency are already confirmed from Phase 1 checkpoints. Use the `act_` prefixed form (e.g., `act_903322579535495`).
 
-Pull campaigns-meta for objective detection (reused by compute-defaults.sh):
-```bash
-meta-ads campaigns list --account-id <account_id> --limit 200 -o json > /tmp/_onboard_campaigns_meta.json
-```
-
 Get current per-objective performance defaults:
 ```bash
-bash <skill-dir>/scripts/compute-defaults.sh <account_id> /tmp/_onboard_campaigns_meta.json
+meta-ads intel defaults --account-id <account_id> -o json
 ```
-`<skill-dir>` is the directory containing this file's parent SKILL.md. Resolve from file path at runtime.
 
 Output is `{"objectives": {"OUTCOME_SALES": {...}, "OUTCOME_TRAFFIC": {...}}, "total_spend": N, "objectives_detected": [...]}`.
 
@@ -123,7 +116,7 @@ If website data included audience signals (testimonials, imagery, language), sug
 
 Run the lightweight creative scan to identify proven patterns:
 ```bash
-bash <skill-dir>/scripts/onboard-scan.sh <account_id>
+meta-ads intel scan --account-id <account_id> -o json
 ```
 
 Read the JSON output. Three scenarios:
@@ -151,7 +144,7 @@ Read the JSON output. Three scenarios:
 
 ### Summary-first approach
 
-Present all per-objective current metrics from compute-defaults.sh in a summary table:
+Present all per-objective current metrics from `intel defaults` in a summary table:
 
 "Here's your current performance across objectives:
 | Objective | Spend % | Key Metrics |
@@ -171,7 +164,7 @@ If user selects custom targets, expand into per-metric questions only for the ob
 
 **OUTCOME_AWARENESS**: "Your CPM is [current_cpm]. Target CPM?" + "Target max frequency for awareness? (default 3.0)"
 
-**OUTCOME_AWARENESS (VIDEO_VIEWS campaigns)**: If compute-defaults.sh returned `current_cpv`, also offer: "Your cost per video view is [current_cpv]. Set a CPV target? (Optional — CPM is the primary awareness metric.)"
+**OUTCOME_AWARENESS (VIDEO_VIEWS campaigns)**: If `intel defaults` returned `current_cpv`, also offer: "Your cost per video view is [current_cpv]. Set a CPV target? (Optional — CPM is the primary awareness metric.)"
 
 **OUTCOME_ENGAGEMENT**: "Your cost per engagement is [current_cpe]. Target CPE?"
 
@@ -204,7 +197,7 @@ If the user selects "I want to customize", show per-stage questions for the prim
 
 For objectives below 5% spend threshold: use sensible defaults and note "Your [objective] campaigns are <5% of spend — using default [metric] target. Update in config.json anytime."
 
-If compute-defaults.sh returned null for a metric (zero conversions): note "No [conversion type] data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
+If `intel defaults` returned null for a metric (zero conversions): note "No [conversion type] data yet — set approximate targets. You can update these later in ~/.meta-ads-intel/config.json."
 
 ### Default Disclosure
 
@@ -322,7 +315,7 @@ Read existing `~/.meta-ads-intel/config.json` and `~/.meta-ads-intel/brand-conte
 
 Ask via AskUserQuestion: "What would you like to update?"
 Options:
-- "Update targets" — re-run compute-defaults.sh for fresh current metrics, then go through Phase 5 (summary-first target setting)
+- "Update targets" — re-run `intel defaults` for fresh current metrics, then go through Phase 5 (summary-first target setting)
 - "Update brand context" — re-run Phase 3 (website + brand questions) and Phase 4 (creative scan)
 - "Full re-onboarding" — wipe config and start from Phase 1
 

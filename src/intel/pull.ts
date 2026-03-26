@@ -140,7 +140,7 @@ function migrateConfigKeys(skillConfigPath: string): void {
 
     if (changed) {
       fs.writeFileSync(skillConfigPath, JSON.stringify(cfg, null, 2));
-      console.log('  Migrated config keys (target_ctr→ctr, target_engagement_rate→engagement_rate)');
+      console.error('  Migrated config keys (target_ctr→ctr, target_engagement_rate→engagement_rate)');
     }
   } catch { /* malformed config — skip migration */ }
 }
@@ -174,7 +174,7 @@ function updateManifest(dataDir: string): void {
     writeJson(path.join(dataDir, 'latest.json'), { latest: entries[entries.length - 1] });
   }
 
-  console.log(`Manifest updated: ${entries.length} entries available`);
+  console.error(`Manifest updated: ${entries.length} entries available`);
 }
 
 // ─── Main pull function ─────────────────────────────────────────────
@@ -203,7 +203,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       );
     }
 
-    console.log(`Account: ${accountId} (source: ${source})`);
+    console.error(`Account: ${accountId} (source: ${source})`);
 
     // Auto-migrate legacy config keys
     migrateConfigKeys(skillConfigPath);
@@ -215,11 +215,11 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     const rawDir = path.join(runDir, '_raw');
     fs.mkdirSync(rawDir, { recursive: true });
 
-    console.log(`Pulling Meta Ads data (${datePreset})...`);
-    console.log(`Run directory: ${runDir}`);
+    console.error(`Pulling Meta Ads data (${datePreset})...`);
+    console.error(`Run directory: ${runDir}`);
 
     // ── Parallel API pull: 3 insights levels ──
-    console.log(`  Pulling period data (${datePreset})...`);
+    console.error(`  Pulling period data (${datePreset})...`);
     const insightsParams = {
       fields: INSIGHT_FIELDS,
       date_preset: datePreset,
@@ -307,7 +307,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     forceSymlink(accountMasterPath, path.join(rawDir, 'account.json'));
 
     // ── Summarize ──
-    console.log('  Summarizing period data...');
+    console.error('  Summarizing period data...');
     await summarize(rawDir);
 
     // Move summaries to _summaries/
@@ -334,7 +334,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
 
     // ── Recent window (for trends) ──
     if (datePreset !== 'last_7d') {
-      console.log('  Pulling recent window (last_7d) for comparison...');
+      console.error('  Pulling recent window (last_7d) for comparison...');
       const recentRaw = path.join(runDir, '_recent_raw');
       const recentDir = path.join(runDir, '_recent');
       fs.mkdirSync(recentRaw, { recursive: true });
@@ -371,14 +371,14 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     }
 
     // ── Prepare analysis files ──
-    console.log('  Preparing analysis files...');
+    console.error('  Preparing analysis files...');
     const pipelineStatus = prepare(runDir, skillConfigPath);
 
     // ── Update manifest ──
     updateManifest(dataDir);
 
-    console.log('');
-    console.log(`Data pull complete. Run directory: ${runDir}`);
+    console.error('');
+    console.error(`Data pull complete. Run directory: ${runDir}`);
 
     return { runDir, pipelineStatus, warnings };
   } finally {
