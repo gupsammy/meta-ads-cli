@@ -1,0 +1,99 @@
+[
+  {
+    "file": "campaigns-summary.json",
+    "verdict": "MATCH",
+    "total_leaves": 160,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "adsets-summary.json",
+    "verdict": "MATCH",
+    "total_leaves": 170,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "ads-summary.json",
+    "verdict": "MATCH",
+    "total_leaves": 185,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "account-health.json",
+    "verdict": "MATCH",
+    "total_leaves": 47,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "budget-actions.json",
+    "verdict": "ACCEPTABLE_DIFFS",
+    "total_leaves": 185,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 1,
+    "unexpected_diffs": 0,
+    "details": [
+      {
+        "path": "$.OUTCOME_SALES.maintain.top_by_spend",
+        "class": "known_fix",
+        "ts": "[7 items]",
+        "shell": "[5 items]"
+      }
+    ]
+  },
+  {
+    "file": "funnel.json",
+    "verdict": "MATCH",
+    "total_leaves": 50,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "trends.json",
+    "verdict": "MATCH",
+    "total_leaves": 68,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "creative-analysis.json",
+    "verdict": "MATCH",
+    "total_leaves": 631,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "creative-media.json",
+    "verdict": "MATCH",
+    "total_leaves": 297,
+    "rounding_diffs": 0,
+    "null_zero_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  }
+]
