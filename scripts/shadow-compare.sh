@@ -40,39 +40,39 @@ done
 
 # ── Phase 2: Create temp workspace ────────────────────────────────
 
-TMPDIR=$(mktemp -d /tmp/shadow-compare-XXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
-echo "Temp workspace: $TMPDIR"
+WORK_DIR=$(mktemp -d /tmp/shadow-compare-XXXX)
+trap 'rm -rf "$WORK_DIR"' EXIT
+echo "Temp workspace: $WORK_DIR"
 
 # Copy _raw/ dereferencing symlinks so shell scripts get real files
-cp -RL "$TS_RUN/_raw/" "$TMPDIR/shell-raw/"
+cp -RL "$TS_RUN/_raw/" "$WORK_DIR/shell-raw/"
 
 # Set up parallel run dir structure for prepare-analysis.sh
-mkdir -p "$TMPDIR/shell-run/_summaries"
+mkdir -p "$WORK_DIR/shell-run/_summaries"
 
 # Link _raw/ into shell-run so prepare-analysis.sh can find creatives.json for URL lookup
-ln -s "$TMPDIR/shell-raw" "$TMPDIR/shell-run/_raw"
+ln -s "$WORK_DIR/shell-raw" "$WORK_DIR/shell-run/_raw"
 
 # Copy _recent/ if it exists (for trends comparison)
 if [[ -d "$TS_RUN/_recent" ]]; then
-  cp -RL "$TS_RUN/_recent/" "$TMPDIR/shell-run/_recent/"
+  cp -RL "$TS_RUN/_recent/" "$WORK_DIR/shell-run/_recent/"
 fi
 
 # ── Phase 3: Run shell pipeline ───────────────────────────────────
 
 echo ""
 echo "Running shell summarize-data.sh..."
-bash "$SHELL_SCRIPTS/summarize-data.sh" "$TMPDIR/shell-raw/"
+bash "$SHELL_SCRIPTS/summarize-data.sh" "$WORK_DIR/shell-raw/"
 
 # Move shell summaries into the run dir structure prepare expects
 for f in campaigns-summary.json adsets-summary.json ads-summary.json; do
-  if [[ -f "$TMPDIR/shell-raw/$f" ]]; then
-    cp "$TMPDIR/shell-raw/$f" "$TMPDIR/shell-run/_summaries/$f"
+  if [[ -f "$WORK_DIR/shell-raw/$f" ]]; then
+    cp "$WORK_DIR/shell-raw/$f" "$WORK_DIR/shell-run/_summaries/$f"
   fi
 done
 
 echo "Running shell prepare-analysis.sh..."
-bash "$SHELL_SCRIPTS/prepare-analysis.sh" "$TMPDIR/shell-run/"
+bash "$SHELL_SCRIPTS/prepare-analysis.sh" "$WORK_DIR/shell-run/"
 
 # ── Phase 4: Compare ─────────────────────────────────────────────
 
@@ -87,24 +87,35 @@ run_diff() {
   local name="$1" ts_file="$2" shell_file="$3"
 
   if [[ ! -f "$ts_file" ]]; then
-    printf "  %-30s SKIPPED (no TS file)\n" "$name"
+    printf "  %-30s MISSING (no TS file)\n" "$name" >&2
+    HAS_UNEXPECTED=1
     return
   fi
   if [[ ! -f "$shell_file" ]]; then
-    printf "  %-30s SKIPPED (no shell file)\n" "$name"
+    printf "  %-30s MISSING (no shell file)\n" "$name" >&2
+    HAS_UNEXPECTED=1
     return
   fi
 
   local report
-  report=$(node "$DIFFER" "$ts_file" "$shell_file" "$name" 2>&1) || true
+  report=$(node "$DIFFER" "$ts_file" "$shell_file" "$name" 2>/dev/null) || {
+    printf "  %-30s ERROR (differ failed)\n" "$name" >&2
+    HAS_UNEXPECTED=1
+    return
+  }
   local verdict rounding known unexpected
   verdict=$(echo "$report" | jq -r '.verdict')
   rounding=$(echo "$report" | jq -r '.rounding_diffs')
   known=$(echo "$report" | jq -r '.known_fixes')
   unexpected=$(echo "$report" | jq -r '.unexpected_diffs')
 
-  local detail=""
+  local detail="" null_zero
+  null_zero=$(echo "$report" | jq -r '.null_zero_diffs')
   if [[ "$rounding" -gt 0 ]]; then detail+="${rounding} rounding"; fi
+  if [[ "$null_zero" -gt 0 ]]; then
+    [[ -n "$detail" ]] && detail+=", "
+    detail+="${null_zero} null/zero"
+  fi
   if [[ "$known" -gt 0 ]]; then
     [[ -n "$detail" ]] && detail+=", "
     detail+="${known} known fix"
@@ -121,14 +132,14 @@ run_diff() {
 }
 
 echo "Layer: Summarize"
-run_diff "campaigns-summary.json" "$TS_RUN/_summaries/campaigns-summary.json" "$TMPDIR/shell-raw/campaigns-summary.json"
-run_diff "adsets-summary.json"    "$TS_RUN/_summaries/adsets-summary.json"    "$TMPDIR/shell-raw/adsets-summary.json"
-run_diff "ads-summary.json"       "$TS_RUN/_summaries/ads-summary.json"       "$TMPDIR/shell-raw/ads-summary.json"
+run_diff "campaigns-summary.json" "$TS_RUN/_summaries/campaigns-summary.json" "$WORK_DIR/shell-raw/campaigns-summary.json"
+run_diff "adsets-summary.json"    "$TS_RUN/_summaries/adsets-summary.json"    "$WORK_DIR/shell-raw/adsets-summary.json"
+run_diff "ads-summary.json"       "$TS_RUN/_summaries/ads-summary.json"       "$WORK_DIR/shell-raw/ads-summary.json"
 
 echo ""
 echo "Layer: Prepare"
 for f in account-health.json budget-actions.json funnel.json trends.json creative-analysis.json creative-media.json; do
-  run_diff "$f" "$TS_RUN/$f" "$TMPDIR/shell-run/$f"
+  run_diff "$f" "$TS_RUN/$f" "$WORK_DIR/shell-run/$f"
 done
 
 # ── Phase 5: Report ──────────────────────────────────────────────

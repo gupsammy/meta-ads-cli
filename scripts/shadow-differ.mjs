@@ -37,9 +37,17 @@ function indexById(arr, key) {
 }
 
 function isKnownFix(path, tsVal, shellVal) {
-  // Bug fix: top_by_spend — TS outputs all maintain adsets, shell truncated to 5
+  // Bug fix: top_by_spend — TS outputs all maintain adsets, shell truncated to 5.
+  // Diff the shared prefix first; only classify the extra tail as known_fix.
   if (/\.maintain\.top_by_spend/.test(path) && Array.isArray(tsVal) && Array.isArray(shellVal)) {
-    return tsVal.length > shellVal.length;
+    if (tsVal.length > shellVal.length) {
+      // Recurse into shared prefix so mismatches there are still caught
+      for (let i = 0; i < shellVal.length; i++) {
+        compare(tsVal[i], shellVal[i], `${path}[${i}]`);
+      }
+      // The caller will push the known_fix diff for the extra tail
+      return true;
+    }
   }
   // Bug fix: files_skipped — shell produces [""], TS produces []
   if (/files_skipped/.test(path)) {
@@ -57,9 +65,9 @@ function classify(path, tsVal, shellVal) {
   if (typeof tsVal === 'number' && typeof shellVal === 'number') {
     if (Math.abs(tsVal - shellVal) < EPSILON) return 'rounding';
   }
-  // Null vs 0 — common jq/JS difference for zero-division
+  // Null vs 0 — semantic distinction (null = not computable, 0 = zero value)
   if ((tsVal === null && shellVal === 0) || (tsVal === 0 && shellVal === null)) {
-    return 'rounding';
+    return 'null_zero';
   }
   return 'unexpected';
 }
@@ -130,18 +138,20 @@ function summarize(val) {
 compare(tsData, shellData, '$');
 
 const rounding = diffs.filter(d => d.class === 'rounding').length;
+const nullZero = diffs.filter(d => d.class === 'null_zero').length;
 const knownFixes = diffs.filter(d => d.class === 'known_fix').length;
 const unexpected = diffs.filter(d => d.class === 'unexpected').length;
 
 let verdict = 'MATCH';
 if (unexpected > 0) verdict = 'UNEXPECTED_DIFFS';
-else if (rounding > 0 || knownFixes > 0) verdict = 'ACCEPTABLE_DIFFS';
+else if (rounding > 0 || nullZero > 0 || knownFixes > 0) verdict = 'ACCEPTABLE_DIFFS';
 
 const report = {
   file: filenameHint || tsPath,
   verdict,
   total_leaves: totalLeaves,
   rounding_diffs: rounding,
+  null_zero_diffs: nullZero,
   known_fixes: knownFixes,
   unexpected_diffs: unexpected,
   details: diffs,
