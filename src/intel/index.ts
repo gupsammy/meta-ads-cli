@@ -3,7 +3,7 @@ import { requireAccessToken, requireAccountId } from '../auth.js';
 import { printOutput, handleCommandError, type OutputFormat } from '../lib/output.js';
 import { computeDefaults } from './defaults.js';
 import { creativeScan } from './scan.js';
-import { pull } from './pull.js';
+import { run } from './run.js';
 
 export function registerIntelCommands(program: Command): void {
   const intel = program
@@ -18,8 +18,12 @@ export function registerIntelCommands(program: Command): void {
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('json'))
     .action(async (datePreset: string, opts: { accessToken?: string; output: OutputFormat }) => {
       try {
-        const result = await pull({ datePreset, accessToken: opts.accessToken });
-        printOutput({ run_dir: result.runDir, ...result.pipelineStatus } as unknown as Record<string, unknown>, opts.output);
+        const result = await run({ datePreset, accessToken: opts.accessToken });
+        printOutput({
+          run_dir: result.runDir,
+          ...result.pipelineStatus,
+          ...(result.creatives ? { creatives: { total_ads: result.creatives.total_ads, total_frames: result.creatives.total_frames } } : {}),
+        } as unknown as Record<string, unknown>, opts.output);
       } catch (error) {
         handleCommandError(error, opts.output);
       }
