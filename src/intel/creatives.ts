@@ -61,7 +61,9 @@ async function fetchMediaWithRetry(url: string, destPath: string, maxRetries = 3
     // Retryable: 429 or 5xx or missing body
     lastError = new Error(`HTTP ${response.status}${!response.body ? ': empty body' : ''}`);
     if (attempt >= maxRetries) break;
-    await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+    const retryAfter = response.headers.get('retry-after');
+    const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000 * Math.pow(2, attempt);
+    await new Promise(r => setTimeout(r, delay));
   }
   throw lastError ?? new Error(`Failed to download ${url}`);
 }
@@ -265,6 +267,7 @@ function buildManifest(
 
   for (const entry of inputEntries) {
     const adId = sanitizeAdId(String(entry.ad_id ?? entry.ad_name ?? ''));
+    if (!adId) continue;
     const adDir = path.join(tmpDir, adId);
     if (!fs.existsSync(adDir) || !fs.statSync(adDir).isDirectory()) continue;
 
@@ -284,7 +287,7 @@ function buildManifest(
     manifest.push({
       ad_id: adId,
       ad_name: entry.ad_name ?? '',
-      rank: entry.rank ?? '',
+      rank: entry.rank,
       roas: entry.primary_metric_name === 'roas' ? entry.primary_metric_value : 0,
       cpa: entry.primary_metric_name === 'cpa' ? entry.primary_metric_value : 0,
       media_type: (metadata.type as string) ?? 'unknown',
@@ -315,6 +318,7 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
   try { oldUmask = process.umask(0o077); } catch { /* worker thread */ }
 
   const tmpDir = `${creativesDir}._tmp_${process.pid}`;
+  let backupSafeToDelete = false;
 
   try {
     // Validate inputs
@@ -350,7 +354,7 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
     fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.mkdirSync(tmpDir, { recursive: true });
 
-    console.log(`Extracting creative artifacts for ${inputEntries.length} ads...`);
+    console.error(`Extracting creative artifacts for ${inputEntries.length} ads...`);
 
     // Process ads in chunks for concurrency (limits parallel API calls)
     const CONCURRENCY = 3;
@@ -365,7 +369,7 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
       const adDir = path.join(tmpDir, adId);
       fs.mkdirSync(adDir, { recursive: true });
 
-      console.log(`  [${i + 1}/${inputEntries.length}] ${entry.ad_name ?? adId} (${entry.rank})`);
+      console.error(`  [${i + 1}/${inputEntries.length}] ${entry.ad_name ?? adId} (${entry.rank})`);
 
       try {
         // Look up creative_id
@@ -421,7 +425,7 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
     }
 
     // Build manifest
-    console.log('Building manifest...');
+    console.error('Building manifest...');
     const { manifest, totalFrames } = buildManifest(creativesDir, tmpDir, inputEntries);
     writeJson(path.join(tmpDir, 'manifest.json'), manifest);
 
@@ -441,12 +445,13 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
       }
       throw swapErr;
     }
-    // Swap succeeded — clean up backup
+    // Swap succeeded — mark backup safe to delete
+    backupSafeToDelete = true;
     if (hadExisting) {
       try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch { /* non-critical */ }
     }
 
-    console.log(`Creative artifact extraction complete. Files in ${creativesDir}/`);
+    console.error(`Creative artifact extraction complete. Files in ${creativesDir}/`);
 
     return {
       creatives_dir: creativesDir,
@@ -458,8 +463,10 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
   } finally {
     // Clean up temp dir if still present (error path)
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* may already be renamed */ }
-    // Clean up backup dir if still present (error path after successful backup rename)
-    try { fs.rmSync(`${creativesDir}._bak_${process.pid}`, { recursive: true, force: true }); } catch { /* may not exist */ }
+    // Only clean backup if swap succeeded — if rollback failed, backup is the only intact copy
+    if (backupSafeToDelete) {
+      try { fs.rmSync(`${creativesDir}._bak_${process.pid}`, { recursive: true, force: true }); } catch { /* may not exist */ }
+    }
     if (oldUmask !== undefined) try { process.umask(oldUmask); } catch { /* worker thread */ }
   }
 }

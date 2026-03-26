@@ -59,8 +59,8 @@ export async function run(options?: PullOptions): Promise<RunResult> {
     return { ...pullResult, creatives: undefined };
   }
 
-  console.log('');
-  console.log('=== Phase 2: Visual Creative Analysis ===');
+  console.error('');
+  console.error('=== Phase 2: Visual Creative Analysis ===');
   const creatives = await analyzeCreatives({
     inputFile: mediaFile,
     dataDir: options?.dataDir,

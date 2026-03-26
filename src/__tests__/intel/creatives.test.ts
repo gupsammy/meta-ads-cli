@@ -21,7 +21,14 @@ vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(),
 }));
 
+// Mock pull module for run() tests
+vi.mock('../../intel/pull.js', () => ({
+  pull: vi.fn(),
+}));
+
 import { analyzeCreatives, sanitizeAdId, computeOrientation } from '../../intel/creatives.js';
+import { run, hasFfmpeg, _resetFfmpegCache } from '../../intel/run.js';
+import { pull } from '../../intel/pull.js';
 import { graphRequestWithRetry } from '../../lib/http.js';
 import { resolveAccessToken } from '../../auth.js';
 import { execFileSync } from 'node:child_process';
@@ -30,6 +37,7 @@ import type { CreativeMediaEntry } from '../../intel/types.js';
 const mockGraphRequest = vi.mocked(graphRequestWithRetry);
 const mockResolveToken = vi.mocked(resolveAccessToken);
 const mockExecFileSync = vi.mocked(execFileSync);
+const mockPull = vi.mocked(pull);
 
 let tmpDir: string;
 let dataDir: string;
@@ -729,27 +737,74 @@ describe('analyzeCreatives', () => {
 // ─── run() tests ────────────────────────────────────────────────
 
 describe('run', () => {
-  // These tests need to mock pull and analyzeCreatives at the module level
-  // We test run() indirectly through its integration with pull and hasFfmpeg
+  const fakePullResult = {
+    runDir: '/tmp/fake-run',
+    pipelineStatus: {
+      status: 'complete' as const,
+      files_produced: ['creative-media.json'],
+      files_skipped: [],
+      warnings: [],
+    },
+    warnings: [],
+  };
 
-  it('hasFfmpeg returns true when both commands succeed', async () => {
+  beforeEach(() => {
+    _resetFfmpegCache();
+    mockPull.mockReset();
+  });
+
+  it('hasFfmpeg returns true when both commands succeed', () => {
     mockExecFileSync.mockReturnValue(Buffer.from('ffmpeg version 6.0'));
-
-    const { hasFfmpeg, _resetFfmpegCache } = await import('../../intel/run.js');
     _resetFfmpegCache();
     expect(hasFfmpeg()).toBe(true);
   });
 
-  it('hasFfmpeg returns false when ffmpeg not found', async () => {
+  it('hasFfmpeg returns false when ffmpeg not found', () => {
     mockExecFileSync.mockImplementation((cmd: unknown) => {
       if (cmd === 'ffmpeg') {
         throw new Error('command not found');
       }
       return Buffer.from('');
     });
-
-    const { hasFfmpeg, _resetFfmpegCache } = await import('../../intel/run.js');
     _resetFfmpegCache();
     expect(hasFfmpeg()).toBe(false);
+  });
+
+  it('returns creatives: undefined when ffmpeg is absent', async () => {
+    mockExecFileSync.mockImplementation(() => { throw new Error('not found'); });
+    _resetFfmpegCache();
+    mockPull.mockResolvedValue(fakePullResult);
+
+    const result = await run();
+
+    expect(result.creatives).toBeUndefined();
+    expect(result.runDir).toBe('/tmp/fake-run');
+    expect(mockPull).toHaveBeenCalledOnce();
+  });
+
+  it('returns creatives: undefined when creative-media.json is missing', async () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('ffmpeg version 6.0'));
+    _resetFfmpegCache();
+    mockPull.mockResolvedValue(fakePullResult);
+
+    const result = await run();
+
+    // creative-media.json doesn't exist at /tmp/fake-run/creative-media.json
+    expect(result.creatives).toBeUndefined();
+  });
+
+  it('returns creatives: undefined when creative-media.json is empty array', async () => {
+    mockExecFileSync.mockReturnValue(Buffer.from('ffmpeg version 6.0'));
+    _resetFfmpegCache();
+
+    // Create a temp dir with an empty creative-media.json
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-test-'));
+    fs.writeFileSync(path.join(runDir, 'creative-media.json'), '[]');
+    mockPull.mockResolvedValue({ ...fakePullResult, runDir });
+
+    const result = await run();
+
+    expect(result.creatives).toBeUndefined();
+    fs.rmSync(runDir, { recursive: true, force: true });
   });
 });
