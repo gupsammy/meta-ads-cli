@@ -1,0 +1,83 @@
+[
+  {
+    "file": "campaigns-summary.json",
+    "verdict": "MATCH",
+    "total_leaves": 128,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "adsets-summary.json",
+    "verdict": "MATCH",
+    "total_leaves": 136,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "ads-summary.json",
+    "verdict": "MATCH",
+    "total_leaves": 148,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "account-health.json",
+    "verdict": "MATCH",
+    "total_leaves": 32,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "budget-actions.json",
+    "verdict": "MATCH",
+    "total_leaves": 136,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "funnel.json",
+    "verdict": "MATCH",
+    "total_leaves": 39,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "trends.json",
+    "verdict": "MATCH",
+    "total_leaves": 2,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "creative-analysis.json",
+    "verdict": "MATCH",
+    "total_leaves": 577,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  },
+  {
+    "file": "creative-media.json",
+    "verdict": "MATCH",
+    "total_leaves": 270,
+    "rounding_diffs": 0,
+    "known_fixes": 0,
+    "unexpected_diffs": 0,
+    "details": []
+  }
+]
