@@ -2,7 +2,7 @@
   {
     "file": "campaigns-summary.json",
     "verdict": "MATCH",
-    "total_leaves": 128,
+    "total_leaves": 160,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -11,7 +11,7 @@
   {
     "file": "adsets-summary.json",
     "verdict": "MATCH",
-    "total_leaves": 136,
+    "total_leaves": 170,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -20,7 +20,7 @@
   {
     "file": "ads-summary.json",
     "verdict": "MATCH",
-    "total_leaves": 148,
+    "total_leaves": 185,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -29,7 +29,7 @@
   {
     "file": "account-health.json",
     "verdict": "MATCH",
-    "total_leaves": 32,
+    "total_leaves": 47,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -37,17 +37,24 @@
   },
   {
     "file": "budget-actions.json",
-    "verdict": "MATCH",
-    "total_leaves": 136,
+    "verdict": "ACCEPTABLE_DIFFS",
+    "total_leaves": 135,
     "rounding_diffs": 0,
-    "known_fixes": 0,
+    "known_fixes": 1,
     "unexpected_diffs": 0,
-    "details": []
+    "details": [
+      {
+        "path": "$.OUTCOME_SALES.maintain.top_by_spend",
+        "class": "known_fix",
+        "ts": "[7 items]",
+        "shell": "[5 items]"
+      }
+    ]
   },
   {
     "file": "funnel.json",
     "verdict": "MATCH",
-    "total_leaves": 39,
+    "total_leaves": 50,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -56,7 +63,7 @@
   {
     "file": "trends.json",
     "verdict": "MATCH",
-    "total_leaves": 2,
+    "total_leaves": 68,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -65,7 +72,7 @@
   {
     "file": "creative-analysis.json",
     "verdict": "MATCH",
-    "total_leaves": 577,
+    "total_leaves": 631,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
@@ -74,7 +81,7 @@
   {
     "file": "creative-media.json",
     "verdict": "MATCH",
-    "total_leaves": 270,
+    "total_leaves": 297,
     "rounding_diffs": 0,
     "known_fixes": 0,
     "unexpected_diffs": 0,
