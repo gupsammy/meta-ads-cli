@@ -399,3 +399,68 @@ export interface PipelineStatus {
   files_skipped: string[];
   warnings: string[];
 }
+
+// ─── Creative artifact types (analyze-creatives output) ─────────
+
+export type Orientation = 'landscape' | 'portrait' | 'square';
+
+export interface VideoMetadata {
+  type: 'video';
+  duration: number;
+  width: number | null;
+  height: number | null;
+  aspect_ratio: string;
+  codec: string;
+  orientation: Orientation;
+}
+
+export interface ImageMetadata {
+  type: 'image';
+  width: number;
+  height: number;
+  orientation: Orientation;
+}
+
+export interface ErrorMetadata {
+  type?: string;
+  error: string;
+  message?: string;
+  fallback?: string;
+}
+
+export interface CreativeManifestEntry {
+  ad_id: string;
+  ad_name: string;
+  rank: string;
+  roas: number;
+  cpa: number;
+  media_type: string;
+  duration: number | null;
+  orientation: string;
+  frames: string[];
+  frame_count: number;
+  artifacts_dir: string;
+}
+
+export interface AnalyzeCreativesOptions {
+  inputFile: string;
+  dataDir?: string;
+  accessToken?: string;
+}
+
+export interface AnalyzeCreativesResult {
+  creatives_dir: string;
+  total_ads: number;
+  total_frames: number;
+  manifest: CreativeManifestEntry[];
+  warnings: string[];
+}
+
+// ─── Run types (intel run orchestrator) ─────────────────────────
+
+export interface RunResult {
+  runDir: string;
+  pipelineStatus: PipelineStatus;
+  warnings: string[];
+  creatives?: AnalyzeCreativesResult;
+}
