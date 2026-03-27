@@ -21,7 +21,7 @@ src/
   index.ts              # entry point, registers all commands
   auth.ts               # resolveAccessToken, saveToken, exchangeForLongLivedToken, OAuth flow
   commands/             # one file per subcommand group (+ setup, update, uninstall)
-  intel/                # analysis pipeline (ported from shell scripts)
+  intel/                # analysis pipeline
     pull.ts             # full pipeline orchestrator: fetch → summarize → prepare
     summarize.ts        # compresses raw API JSON into *-summary.json files
     prepare/            # generates analysis outputs (account-health, budget-actions, funnel, trends, creative-analysis)
@@ -96,7 +96,7 @@ Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `f
 - Errors (stderr): `{"error": "CODE", "message": "...", "hint": "..."}`
 - Always use `.data[]` not `.[]` when parsing list output with jq.
 - `ads list`/`ads get` include flattened creative fields: `creative_id`, `creative_title`, `creative_body`, `creative_image_url`, `creative_thumbnail_url`.
-- `intel run` returns `{"run_dir": "...", "status": "complete|partial", "files_produced": [...], "warnings": [...]}`.
+- `intel run` returns `{"run_dir": "...", "status": "complete|partial", "files_produced": [...], "files_skipped": [...], "warnings": [...], "creatives": {"total_ads": N, "total_frames": N}}`. The `creatives` field is present only when ffmpeg extracted visual artifacts.
 
 ## Destructive Operations
 
