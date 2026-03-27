@@ -49,6 +49,7 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     'trends.json',
     'creative-analysis.json',
     'creative-media.json',
+    'recommendations.json',
   ];
   const produced: string[] = [];
   const skipped: string[] = [];
@@ -131,6 +132,16 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     // Shell writes empty array for creative-media when no ads data
     writeJson(path.join(runDir, 'creative-media.json'), []);
     produced.push('creative-media.json');
+  }
+
+  // 7. recommendations.json (pass-through from _raw)
+  const rawRecsPath = path.join(runDir, '_raw', 'recommendations.json');
+  if (fs.existsSync(rawRecsPath)) {
+    const rawRecs = readJsonSafe<Record<string, unknown>>(rawRecsPath);
+    if (rawRecs) {
+      writeJson(path.join(runDir, 'recommendations.json'), rawRecs);
+      produced.push('recommendations.json');
+    }
   }
 
   // Merge pull-phase warnings

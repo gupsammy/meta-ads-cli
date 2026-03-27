@@ -306,6 +306,20 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     }
     forceSymlink(accountMasterPath, path.join(rawDir, 'account.json'));
 
+    // Recommendations — always fresh, non-blocking
+    try {
+      console.error('  Pulling account recommendations...');
+      const recsResponse = await graphRequestWithRetry<Record<string, unknown>>(
+        `/${accountId}/recommendations`,
+        token,
+        { method: 'POST' },
+      );
+      writeJson(path.join(rawDir, 'recommendations.json'), recsResponse);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`Recommendations fetch failed (non-blocking): ${msg}`);
+    }
+
     // ── Summarize ──
     console.error('  Summarizing period data...');
     await summarize(rawDir);
