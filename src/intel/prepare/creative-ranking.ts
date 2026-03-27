@@ -42,6 +42,9 @@ function formatAd(a: AdSummary): CreativeAdEntry {
     post_engagement: a.post_engagement,
     lead: a.lead,
     app_install: a.app_install,
+    // AdSummary types these as required string, but summaries are read from JSON files
+    // without runtime validation — fields may be absent on older/partial data. Keep ?? ''
+    // as a safe fallback (also exercised by the test fixtures in prepare.test.ts).
     quality_ranking: a.quality_ranking ?? '',
     engagement_rate_ranking: a.engagement_rate_ranking ?? '',
     conversion_rate_ranking: a.conversion_rate_ranking ?? '',
@@ -59,6 +62,7 @@ function formatZero(a: AdSummary): CreativeZeroEntry {
     cpm: a.impressions > 0 ? round2(a.spend / a.impressions * 1000) : null,
     reach: a.reach,
     video_views: a.video_view,
+    // Same rationale as formatAd above — keep ?? '' for JSON-deserialized safety.
     quality_ranking: a.quality_ranking ?? '',
     engagement_rate_ranking: a.engagement_rate_ranking ?? '',
     conversion_rate_ranking: a.conversion_rate_ranking ?? '',
