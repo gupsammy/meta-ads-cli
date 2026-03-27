@@ -22,7 +22,7 @@ Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: las
 
 ## Data Architecture
 
-The CLI handles all data pulling, summarization, and computation. The pipeline produces 6 output files; the agent reads 5 directly (creative-media.json is consumed internally by the pipeline for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
+The CLI handles all data pulling, summarization, and computation. The pipeline produces 7 output files; the agent reads 6 directly (creative-media.json is consumed internally by the pipeline for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
 
 ```
 ~/.meta-ads-intel/
@@ -33,11 +33,12 @@ The CLI handles all data pulling, summarization, and computation. The pipeline p
 │       ├── _raw/          # raw API responses — NEVER read these
 │       ├── _summaries/    # intermediate summaries — NEVER read these
 │       ├── _recent/       # recent window summaries (for trends)
-│       ├── account-health.json     ── agent reads these 5 ──
+│       ├── account-health.json     ── agent reads these 6 ──
 │       ├── budget-actions.json
 │       ├── funnel.json
 │       ├── trends.json
 │       ├── creative-analysis.json
+│       ├── recommendations.json      # may be absent (see Step 4)
 │       ├── creative-media.json     # internal pipeline use only
 │       └── pipeline-status.json    # check before reading analysis files
 ├── reports/
@@ -72,7 +73,7 @@ Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, co
 meta-ads intel run $ARGUMENTS -o json
 ```
 
-This command runs the full pipeline: pull raw API data → summarize → compute 6 analysis files → extract visual creative artifacts (if ffmpeg available).
+This command runs the full pipeline: pull raw API data → summarize → compute 7 analysis files → extract visual creative artifacts (if ffmpeg available).
 
 If ffmpeg is not available, the command logs a note to stderr. Note this in the analysis — visual creative analysis was skipped, and the user can install ffmpeg (`brew install ffmpeg`) for future runs.
 
@@ -102,7 +103,24 @@ For each objective present:
 
 Report `total_spend` and spend breakdown across objectives for context. Note: `total_reach` sums reach across objectives — users reached by multiple campaigns are counted once per campaign, so the total overstates unique reach. Lead with the primary objective's scorecard, then cover others.
 
-### 4. Budget Actions
+### 4. Recommendations (Meta API)
+
+Read `recommendations.json` from the run directory — only if listed in `files_produced`. If not produced, skip this step silently. Recommendations require specific API permissions and may not be available for all accounts.
+
+This file contains Meta's own account-level optimization analysis:
+- `opportunity_score` (0-100): report alongside Step 3 KPIs as a health signal
+- `data` array: each entry has `type`, `description`, `estimated_impact_score` (points), `estimated_impact_pct` (lift %), and `api_apply_supported` (boolean)
+
+Cross-reference Meta's recommendations with our pipeline analysis in subsequent steps:
+- Budget recommendations (e.g., `BUDGET_INCREASE`, `BUDGET_REALLOCATION`): compare with budget-actions classifications in Step 5. Agreement = high confidence to act. Disagreement = flag for investigation.
+- Creative fatigue recommendations (e.g., `CREATIVE_FATIGUE`): compare with trend analysis frequency signals in Step 7 and creative ranking in Step 8.
+- Targeting recommendations (e.g., `BROAD_TARGETING`): note for funnel analysis context in Step 6.
+
+Flag `api_apply_supported: true` recommendations separately — these can be executed programmatically and represent quick wins.
+
+Do not list all recommendations verbatim. Prioritize by `estimated_impact_score` and relevance to the primary objective. Group into: (1) confirms our analysis, (2) surfaces new issues we missed, (3) conflicts with our analysis.
+
+### 5. Budget Actions
 
 Read `budget-actions.json` from the run directory.
 
@@ -115,7 +133,7 @@ Per-objective sections, each pre-classified into scale/reduce/pause/refresh/main
 
 Use `references/thresholds.md` interpretation rules for nuance.
 
-### 5. Funnel Analysis
+### 6. Funnel Analysis
 
 Read `funnel.json` from the run directory.
 
@@ -136,9 +154,9 @@ Per-objective sections with different funnel shapes. Expected rates for bottlene
 
 **OUTCOME_APP_PROMOTION** (3-stage): impression → click → install. Low install rate = store listing issue or targeting.
 
-Connect bottlenecks to specific campaign or adset recommendations from Step 4.
+Connect bottlenecks to specific campaign or adset recommendations from Step 5.
 
-### 6. Trend Analysis
+### 7. Trend Analysis
 
 Read `trends.json` from the run directory.
 
@@ -160,7 +178,7 @@ Identify concerning patterns: accelerating fatigue (frequency rising + KPI decli
 
 If `available: false`: note that trend data requires a comparison window and recommend running with `last_14d` preset (default).
 
-### 7. Creative Analysis
+### 8. Creative Analysis
 
 Read `creative-analysis.json` from the run directory. This is the highest-value analysis step — where agent intelligence matters most. Do not skip or abbreviate any sub-step.
 
@@ -184,7 +202,14 @@ For the primary objective (and any other objective with significant spend):
 
 5. Synthesize: which creative directions should be scaled (new variants in the same angle), which should be killed, and what net-new angles are untested? Note which objective each recommendation applies to.
 
-### 8. Decision Brief
+6. If ad entries include diagnostic ranking fields (`quality_ranking`, `engagement_rate_ranking`, `conversion_rate_ranking` — values like `ABOVE_AVERAGE_35`, `AVERAGE`, `BELOW_AVERAGE_35`, or empty string for insufficient data), cross-reference diagnostics with metric rankings:
+   - Winner + low quality_ranking (`BELOW_AVERAGE_35` or `BELOW_AVERAGE_10`): targeting is carrying weak creative — recommend creative refresh while keeping targeting settings
+   - Loser + high quality_ranking (`ABOVE_AVERAGE_35` or `ABOVE_AVERAGE_20`): good creative stuck in bad targeting or funnel — investigate audience/landing page before killing the ad
+   - All three rankings declining on a high-spend ad: early fatigue warning — flag for preemptive refresh before KPI deterioration shows in spend data
+   - Empty diagnostic fields mean the ad had <500 impressions — note insufficient data and rely on metric rankings alone
+   - If diagnostic fields are absent from all entries (older pipeline version), skip this sub-step
+
+### 9. Decision Brief
 
 **Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the most recent one (sort by filename descending — filenames embed ISO date) and compute deltas for primary objective KPIs (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health.
 
@@ -192,12 +217,13 @@ Synthesize all analysis into:
 
 - Account Health: total spend, per-objective spend breakdown, primary objective KPIs vs targets (+ vs. last analysis if available)
 - Trends: period vs recent scorecard per objective, biggest movers
-- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Prioritize the primary objective but include cross-objective synergies (e.g., "traffic campaign X is feeding sales funnel Y")
-- Risks: fatigue signals, underperforming spend, drifting campaigns across all objectives
+- Meta Opportunity Score: if recommendations.json was read in Step 4, include the score and note whether Meta's top recommendations align with or contradict our analysis
+- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Prioritize the primary objective but include cross-objective synergies (e.g., "traffic campaign X is feeding sales funnel Y"). Incorporate Meta's API-Apply-supported recommendations where they align with our analysis as quick wins.
+- Risks: fatigue signals, underperforming spend, drifting campaigns across all objectives. Flag any Meta recommendations that conflict with our own analysis as investigation items.
 - Creative Insights: messaging/visual patterns correlating with performance, organized by objective
 - Watch Items: learning-phase campaigns, insufficient-data tests
 
-### 9. Save Output
+### 10. Save Output
 
 Write to `~/.meta-ads-intel/reports/`:
 1. `report-{YYYY-MM-DD}.md` — full markdown brief
@@ -212,5 +238,5 @@ If this is the user's first analysis, suggest weekly scheduling: "For automated 
 - NEVER read files in `_raw/` directories. These contain verbose API responses with 40+ duplicate action types per row.
 - NEVER read `*-summary.json` files directly. These are intermediate pipeline files.
 - NEVER read `creative-media.json` — it is consumed internally by the pipeline.
-- Only read the 5 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`. The 6th file (`creative-media.json`) is consumed internally by the pipeline. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
+- Only read the 6 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `recommendations.json`. The 7th file (`creative-media.json`) is consumed internally by the pipeline. `recommendations.json` may not always be present — check `files_produced` before reading. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
 - All monetary values in analysis files are in the account's currency (not minor units — the pipeline already converts).

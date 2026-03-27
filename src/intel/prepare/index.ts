@@ -133,6 +133,16 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     produced.push('creative-media.json');
   }
 
+  // 7. recommendations.json (pass-through from _raw)
+  const rawRecsPath = path.join(runDir, '_raw', 'recommendations.json');
+  if (fs.existsSync(rawRecsPath)) {
+    const rawRecs = readJsonSafe<Record<string, unknown>>(rawRecsPath);
+    if (rawRecs) {
+      writeJson(path.join(runDir, 'recommendations.json'), rawRecs);
+      produced.push('recommendations.json');
+    }
+  }
+
   // Merge pull-phase warnings
   const pullWarningsPath = path.join(runDir, '_pull-warnings.json');
   if (fs.existsSync(pullWarningsPath)) {

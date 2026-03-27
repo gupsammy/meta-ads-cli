@@ -100,13 +100,18 @@ function setupMocks(): void {
     return { data: [], has_more: false };
   });
 
-  mockGraphRequest.mockResolvedValue({
-    id: 'act_123',
-    name: 'Test Account',
-    account_id: '123',
-    account_status: 1,
-    currency: 'USD',
-    timezone_name: 'America/Los_Angeles',
+  mockGraphRequest.mockImplementation(async (pathArg: string) => {
+    if (pathArg.includes('/recommendations')) {
+      return { opportunity_score: 75, data: [{ type: 'BUDGET_INCREASE', description: 'Test' }] };
+    }
+    return {
+      id: 'act_123',
+      name: 'Test Account',
+      account_id: '123',
+      account_status: 1,
+      currency: 'USD',
+      timezone_name: 'America/Los_Angeles',
+    };
   });
 }
 
@@ -314,8 +319,9 @@ describe('pull', () => {
 
       await pull({ dataDir, configPath });
 
-      // graphRequestWithRetry should NOT have been called
-      expect(mockGraphRequest).not.toHaveBeenCalled();
+      // graphRequestWithRetry should NOT have been called for account info (cached)
+      const accountCalls = mockGraphRequest.mock.calls.filter(c => !String(c[0]).includes('/recommendations'));
+      expect(accountCalls).toHaveLength(0);
     });
 
     it('re-pulls account when cache is stale (>7 days)', async () => {
@@ -517,6 +523,44 @@ describe('pull', () => {
       } finally {
         delete process.env['META_ADS_DATA_DIR'];
       }
+    });
+  });
+
+  describe('recommendations fetch', () => {
+    it('writes _raw/recommendations.json after successful fetch', async () => {
+      writeConfig();
+      setupMocks();
+
+      const result = await pull({ dataDir, configPath });
+
+      const recsPath = path.join(result.runDir, '_raw', 'recommendations.json');
+      expect(fs.existsSync(recsPath)).toBe(true);
+      const recs = JSON.parse(fs.readFileSync(recsPath, 'utf-8'));
+      expect(recs.opportunity_score).toBe(75);
+    });
+
+    it('pipeline completes even when recommendations fetch throws', async () => {
+      writeConfig();
+      setupMocks();
+
+      mockGraphRequest.mockImplementation(async (pathArg: string) => {
+        if (pathArg.includes('/recommendations')) {
+          throw new Error('Recommendations API unavailable');
+        }
+        return {
+          id: 'act_123',
+          name: 'Test Account',
+          account_id: '123',
+          account_status: 1,
+          currency: 'USD',
+          timezone_name: 'America/Los_Angeles',
+        };
+      });
+
+      const result = await pull({ dataDir, configPath });
+
+      expect(result.pipelineStatus).toBeDefined();
+      expect(result.warnings.some(w => w.includes('Recommendations fetch failed'))).toBe(true);
     });
   });
 });

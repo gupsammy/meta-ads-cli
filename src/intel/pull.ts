@@ -6,7 +6,7 @@ import { resolveAccessToken } from '../auth.js';
 import { ConfigManager } from '../lib/config.js';
 import { summarize } from './summarize.js';
 import { prepare } from './prepare/index.js';
-import type { PipelineStatus, AdCreativeRow } from './types.js';
+import type { PipelineStatus, AdCreativeRow, RecommendationsData } from './types.js';
 
 // Same fields as src/commands/insights.ts — duplicated here to avoid coupling
 // pull's API contract to the CLI command's display fields.
@@ -308,6 +308,20 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       writeJson(accountMasterPath, accountInfo);
     }
     forceSymlink(accountMasterPath, path.join(rawDir, 'account.json'));
+
+    // Recommendations — always fresh, non-blocking
+    try {
+      console.error('  Pulling account recommendations...');
+      const recsResponse = await graphRequestWithRetry<RecommendationsData>(
+        `/${accountId}/recommendations`,
+        token,
+        { method: 'POST' },
+      );
+      writeJson(path.join(rawDir, 'recommendations.json'), recsResponse);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push(`Recommendations fetch failed (non-blocking): ${msg}`);
+    }
 
     // ── Summarize ──
     console.error('  Summarizing period data...');

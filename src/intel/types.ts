@@ -383,6 +383,22 @@ export interface CreativeMediaEntry {
 /** creative-media.json is a flat array */
 export type CreativeMedia = CreativeMediaEntry[];
 
+/** Single recommendation entry from the Meta API */
+export interface RecommendationEntry {
+  type: string;
+  description: string;
+  estimated_impact_score?: number;
+  estimated_impact_pct?: number;
+  api_apply_supported?: boolean;
+  [key: string]: unknown;
+}
+
+/** Full response from POST /act_{id}/recommendations */
+export interface RecommendationsData {
+  opportunity_score: number;
+  data: RecommendationEntry[];
+}
+
 // ─── Pull types (raw API response shapes) ─────────────────────────
 
 /** Raw campaign row from /{accountId}/campaigns (metadata, not insights) */

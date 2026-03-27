@@ -241,6 +241,33 @@ describe('pipeline status', () => {
 
     expect(() => prepare(tmpDir, path.join(tmpDir, 'nonexistent.json'))).toThrow('not found');
   });
+
+  it('passes through recommendations.json when raw file exists', () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_raw/recommendations.json', { opportunity_score: 75, data: [{ type: 'BUDGET_INCREASE', description: 'Test' }] });
+
+    const status = prepare(tmpDir, configPath);
+
+    expect(fs.existsSync(path.join(tmpDir, 'recommendations.json'))).toBe(true);
+    expect(status.files_produced).toContain('recommendations.json');
+    expect(status.files_skipped).not.toContain('recommendations.json');
+
+    const recs = JSON.parse(fs.readFileSync(path.join(tmpDir, 'recommendations.json'), 'utf-8')) as Record<string, unknown>;
+    expect(recs.opportunity_score).toBe(75);
+  });
+
+  it('skips recommendations.json when raw file missing without affecting status', () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
+
+    const status = prepare(tmpDir, configPath);
+
+    expect(fs.existsSync(path.join(tmpDir, 'recommendations.json'))).toBe(false);
+    expect(status.files_skipped).not.toContain('recommendations.json');
+    expect(status.files_produced).not.toContain('recommendations.json');
+    expect(status.status).toBe('complete');
+  });
 });
 
 // ─── Account health ───────────────────────────────────────────────
@@ -925,6 +952,7 @@ describe('edge cases', () => {
     writeJson('_summaries/campaigns-summary.json', []);
     writeJson('_summaries/adsets-summary.json', []);
     writeJson('_summaries/ads-summary.json', []);
+    writeJson('_raw/recommendations.json', { opportunity_score: 0, data: [] });
 
     const status = await prepare(tmpDir, configPath);
     expect(status.status).toBe('complete');
@@ -966,6 +994,7 @@ describe('edge cases', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
+    writeJson('_raw/recommendations.json', { opportunity_score: 75, data: [] });
 
     await prepare(tmpDir, configPath);
     const status = readOutput('pipeline-status.json') as Record<string, unknown>;
