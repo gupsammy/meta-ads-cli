@@ -22,6 +22,9 @@ export interface InsightsRow {
   actions?: ActionEntry[];
   action_values?: ActionEntry[];
   purchase_roas?: ActionEntry[];
+  quality_ranking?: string;
+  engagement_rate_ranking?: string;
+  conversion_rate_ranking?: string;
   [key: string]: unknown;
 }
 
@@ -93,6 +96,9 @@ export interface AdSummary extends DerivedMetrics {
   date_stop: string;
   creative_body: string;
   creative_title: string;
+  quality_ranking: string;
+  engagement_rate_ranking: string;
+  conversion_rate_ranking: string;
 }
 
 // ─── Defaults types (output of compute-defaults) ─────────────────
@@ -321,6 +327,9 @@ export interface CreativeAdEntry {
   post_engagement: number;
   lead: number;
   app_install: number;
+  quality_ranking: string;
+  engagement_rate_ranking: string;
+  conversion_rate_ranking: string;
 }
 
 /** Zero-conversion ad entry */
@@ -334,6 +343,9 @@ export interface CreativeZeroEntry {
   cpm: number | null;
   reach: number;
   video_views: number;
+  quality_ranking: string;
+  engagement_rate_ranking: string;
+  conversion_rate_ranking: string;
 }
 
 /** Per-objective creative analysis group */

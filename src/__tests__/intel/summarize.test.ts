@@ -243,6 +243,39 @@ describe('ads', () => {
     expect(result[0].creative_title).toBe('');
   });
 
+  it('passes through diagnostic ranking fields when present', async () => {
+    writeJson('ads.json', {
+      data: [makeRow({
+        ad_id: 'a1',
+        ad_name: 'Ad 1',
+        adset_id: 'as1',
+        campaign_id: 'c1',
+        campaign_name: 'C1',
+        quality_ranking: 'ABOVE_AVERAGE_20',
+        engagement_rate_ranking: 'AVERAGE',
+        conversion_rate_ranking: 'BELOW_AVERAGE_35',
+      })],
+    });
+
+    await summarize(tmpDir);
+    const result = readOutput('ads-summary.json') as Record<string, unknown>[];
+    expect(result[0].quality_ranking).toBe('ABOVE_AVERAGE_20');
+    expect(result[0].engagement_rate_ranking).toBe('AVERAGE');
+    expect(result[0].conversion_rate_ranking).toBe('BELOW_AVERAGE_35');
+  });
+
+  it('defaults diagnostic ranking fields to "" when absent (< 500 impressions)', async () => {
+    writeJson('ads.json', {
+      data: [makeRow({ ad_id: 'a1', ad_name: 'Ad 1', adset_id: 'as1', campaign_id: 'c1', campaign_name: 'C1' })],
+    });
+
+    await summarize(tmpDir);
+    const result = readOutput('ads-summary.json') as Record<string, unknown>[];
+    expect(result[0].quality_ranking).toBe('');
+    expect(result[0].engagement_rate_ranking).toBe('');
+    expect(result[0].conversion_rate_ranking).toBe('');
+  });
+
   it('skips when ads.json missing', async () => {
     await summarize(tmpDir);
     expect(fs.existsSync(path.join(tmpDir, 'ads-summary.json'))).toBe(false);
