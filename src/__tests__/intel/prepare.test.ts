@@ -873,6 +873,49 @@ describe('creative ranking', () => {
     expect(media[0].creative_image_url).toBe('');
     expect(media[0].creative_thumbnail_url).toBe('');
   });
+
+  it('includes diagnostic ranking fields in winners', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'AVERAGE', conversion_rate_ranking: 'BELOW_AVERAGE_35' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.quality_ranking).toBe('ABOVE_AVERAGE_20');
+    expect(winner.engagement_rate_ranking).toBe('AVERAGE');
+    expect(winner.conversion_rate_ranking).toBe('BELOW_AVERAGE_35');
+  });
+
+  it('defaults diagnostic ranking fields to "" in winners when absent', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.quality_ranking).toBe('');
+    expect(winner.engagement_rate_ranking).toBe('');
+    expect(winner.conversion_rate_ranking).toBe('');
+  });
+
+  it('includes diagnostic ranking fields in zero_conversion ads', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0 }),
+      makeAd({ ad_id: 'a2', ad_name: 'Zero Ad', purchases: 0, roas: 0, spend: 200, quality_ranking: 'BELOW_AVERAGE_10', engagement_rate_ranking: 'BELOW_AVERAGE_35', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const zeroAd = (sales.zero_conversion as Record<string, unknown>[])[0];
+    expect(zeroAd.quality_ranking).toBe('BELOW_AVERAGE_10');
+    expect(zeroAd.engagement_rate_ranking).toBe('BELOW_AVERAGE_35');
+    expect(zeroAd.conversion_rate_ranking).toBe('');
+  });
 });
 
 // ─── Edge cases ───────────────────────────────────────────────────

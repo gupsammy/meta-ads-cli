@@ -145,6 +145,9 @@ export async function summarize(dir: string): Promise<void> {
           date_stop: String(row.date_stop ?? ''),
           creative_body: creative.creative_body,
           creative_title: creative.creative_title,
+          quality_ranking: String(row.quality_ranking ?? ''),
+          engagement_rate_ranking: String(row.engagement_rate_ranking ?? ''),
+          conversion_rate_ranking: String(row.conversion_rate_ranking ?? ''),
         };
       });
       fs.writeFileSync(path.join(dir, 'ads-summary.json'), JSON.stringify(result, null, 2));

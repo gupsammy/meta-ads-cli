@@ -83,8 +83,14 @@ Examples:
 
         const level = opts.level ?? (opts.adId ? 'ad' : opts.adsetId ? 'adset' : opts.campaignId ? 'campaign' : 'account');
 
+        const defaultFields = opts.fields ?? (
+          level === 'ad'
+            ? INSIGHT_FIELDS + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking'
+            : INSIGHT_FIELDS
+        );
+
         const params: Record<string, string> = {
-          fields: opts.fields ?? INSIGHT_FIELDS,
+          fields: defaultFields,
           level,
         };
 
