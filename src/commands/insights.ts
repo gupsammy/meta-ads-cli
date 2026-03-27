@@ -5,7 +5,7 @@ import { printListOutput, printError, handleCommandError, type OutputFormat, EXI
 
 type InsightRow = Record<string, unknown>;
 
-const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop,quality_ranking,engagement_rate_ranking,conversion_rate_ranking';
+const INSIGHT_FIELDS = 'account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
 const DATE_PRESETS = [
   'today', 'yesterday', 'this_month', 'last_month',
@@ -83,8 +83,14 @@ Examples:
 
         const level = opts.level ?? (opts.adId ? 'ad' : opts.adsetId ? 'adset' : opts.campaignId ? 'campaign' : 'account');
 
+        const defaultFields = opts.fields ?? (
+          level === 'ad'
+            ? INSIGHT_FIELDS + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking'
+            : INSIGHT_FIELDS
+        );
+
         const params: Record<string, string> = {
-          fields: opts.fields ?? INSIGHT_FIELDS,
+          fields: defaultFields,
           level,
         };
 

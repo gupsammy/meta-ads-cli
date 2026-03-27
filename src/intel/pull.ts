@@ -15,8 +15,8 @@ const INSIGHT_FIELDS =
   'impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,' +
   'actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
-// Ad-level diagnostic fields (only meaningful at ad level — not campaign/adset)
-const AD_DIAGNOSTIC_FIELDS = ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking';
+// Ad-level insight fields include diagnostic rankings (only meaningful at ad level — not campaign/adset)
+const AD_INSIGHT_FIELDS = INSIGHT_FIELDS + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking';
 
 const PULL_LIMIT = 500;
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -244,7 +244,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       paginateAll<Record<string, unknown>>(
         `/${accountId}/insights`,
         token,
-        { params: { ...insightsParams, fields: INSIGHT_FIELDS + AD_DIAGNOSTIC_FIELDS, level: 'ad' } },
+        { params: { ...insightsParams, fields: AD_INSIGHT_FIELDS, level: 'ad' } },
         PULL_LIMIT,
       ),
     ]);
