@@ -6,7 +6,7 @@ import { resolveAccessToken } from '../auth.js';
 import { ConfigManager } from '../lib/config.js';
 import { summarize } from './summarize.js';
 import { prepare } from './prepare/index.js';
-import type { PipelineStatus, AdCreativeRow } from './types.js';
+import type { PipelineStatus, AdCreativeRow, RecommendationsData } from './types.js';
 
 // Same fields as src/commands/insights.ts — duplicated here to avoid coupling
 // pull's API contract to the CLI command's display fields.
@@ -309,7 +309,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     // Recommendations — always fresh, non-blocking
     try {
       console.error('  Pulling account recommendations...');
-      const recsResponse = await graphRequestWithRetry<Record<string, unknown>>(
+      const recsResponse = await graphRequestWithRetry<RecommendationsData>(
         `/${accountId}/recommendations`,
         token,
         { method: 'POST' },
