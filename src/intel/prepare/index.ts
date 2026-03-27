@@ -49,7 +49,6 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     'trends.json',
     'creative-analysis.json',
     'creative-media.json',
-    'recommendations.json',
   ];
   const produced: string[] = [];
   const skipped: string[] = [];

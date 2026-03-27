@@ -185,7 +185,6 @@ describe('pipeline status', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
-    writeJson('_raw/recommendations.json', { opportunity_score: 75, data: [] });
 
     const status = await prepare(tmpDir, configPath);
     expect(status.status).toBe('complete');
@@ -195,7 +194,6 @@ describe('pipeline status', () => {
     expect(status.files_produced).toContain('trends.json');
     expect(status.files_produced).toContain('creative-analysis.json');
     expect(status.files_produced).toContain('creative-media.json');
-    expect(status.files_produced).toContain('recommendations.json');
     expect(status.files_skipped).toEqual([]);
     expect(status.warnings).toEqual([]);
   });
@@ -213,7 +211,6 @@ describe('pipeline status', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
-    writeJson('_raw/recommendations.json', { opportunity_score: 75, data: [] });
 
     const status = await prepare(tmpDir, configPath);
     expect(status.files_skipped).toEqual([]);
@@ -259,14 +256,17 @@ describe('pipeline status', () => {
     expect(recs.opportunity_score).toBe(75);
   });
 
-  it('skips recommendations.json when raw file missing', () => {
+  it('skips recommendations.json when raw file missing without affecting status', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
 
     const status = prepare(tmpDir, configPath);
 
     expect(fs.existsSync(path.join(tmpDir, 'recommendations.json'))).toBe(false);
-    expect(status.files_skipped).toContain('recommendations.json');
+    expect(status.files_skipped).not.toContain('recommendations.json');
     expect(status.files_produced).not.toContain('recommendations.json');
+    expect(status.status).toBe('complete');
   });
 });
 
