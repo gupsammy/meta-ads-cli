@@ -393,7 +393,7 @@ export interface RecommendationEntry {
   [key: string]: unknown;
 }
 
-/** Full response from POST /act_{id}/recommendations */
+/** Full response from GET /act_{id}/recommendations */
 export interface RecommendationsData {
   opportunity_score: number;
   data: RecommendationEntry[];

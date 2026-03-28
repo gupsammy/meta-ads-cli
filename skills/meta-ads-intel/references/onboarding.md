@@ -78,9 +78,9 @@ Options:
 
 If URL provided — run a comprehensive site review. Do NOT just scrape the homepage; most e-commerce sites need deeper crawling (collection pages, product pages, about page, sitemap).
 
-If subagents are available, spawn one for a thorough website review:
-- Prompt: "Analyze <URL> comprehensively. Fetch the homepage, then discover the full catalog via sitemap.xml or by following navigation links. Visit at least 3-5 product/collection pages. Extract: all product categories, specific products with prices, brand positioning/voice, target audience signals, fabric/material details, unique selling points. Return a structured summary."
-- The subagent handles 404s, JS SPAs, and sitemap discovery automatically.
+Spawn a **general-purpose** subagent (subagent_type: "general-purpose") for a thorough website review. Do NOT use an Explore agent — it lacks the web tools needed for comprehensive crawling.
+- Prompt: "Analyze <URL> comprehensively. Use WebFetch to scrape the homepage, then discover the full catalog via sitemap.xml or by following navigation links (collection pages, category pages). Visit at least 5-8 product/collection pages plus the about page. Extract: all product categories with subcategories, specific products with prices and materials, brand positioning/voice/tone, target audience signals (imagery, language, testimonials), fabric/material details, unique selling points, price tiers. Return a detailed structured summary organized by category."
+- The subagent has full access to WebFetch, WebSearch, and Bash — it handles 404s, JS SPAs, redirects, and sitemap discovery automatically.
 
 Store the findings — use them to pre-fill suggestions in Steps 3b-3d. A comprehensive site review means confident product/price/audience suggestions rather than asking the user to type everything from scratch.
 
@@ -181,14 +181,9 @@ If user selects custom targets, expand into per-metric questions only for the ob
 
 Present the funnel benchmarks that will be used for bottleneck detection:
 
-"I'll use these funnel benchmarks for bottleneck detection during analysis:
-| Stage | Expected Rate |
-| --- | --- |
-| Click → Landing | 70% |
-| Landing → Add to Cart | 8% |
-| Cart → Checkout | 50% |
-| Checkout → Purchase | 60% |
-These are general e-commerce defaults. For luxury, B2B, or non-standard funnels, you may want to adjust."
+"I'll use these funnel benchmarks for bottleneck detection during analysis:"
+
+Present the funnel benchmarks from `references/thresholds.md` "Funnel Expected Rates" section in a summary table. These are the defaults for bottleneck detection. Add: "These are general e-commerce defaults. For luxury, B2B, or non-standard funnels, you may want to adjust."
 
 AskUserQuestion: "Use these funnel benchmarks?"
 Options: "Use defaults (Recommended)", "I want to customize"

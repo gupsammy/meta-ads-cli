@@ -1,6 +1,6 @@
 # Brand Copy Reference
 
-Framework for evaluating and generating Meta ad copy. Used during creative analysis (Step 7). User-specific brand context (product, audience, hooks) is in `~/.meta-ads-intel/brand-context.md`.
+Framework for evaluating and generating Meta ad copy. Used during creative analysis (Step 8). User-specific brand context (product, audience, hooks) is in `~/.meta-ads-intel/brand-context.md`.
 
 ## The Four Horsemen (Kallaway Framework)
 

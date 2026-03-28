@@ -315,7 +315,6 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       const recsResponse = await graphRequestWithRetry<RecommendationsData>(
         `/${accountId}/recommendations`,
         token,
-        { method: 'POST' },
       );
       writeJson(path.join(rawDir, 'recommendations.json'), recsResponse);
     } catch (err) {
