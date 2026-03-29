@@ -28,9 +28,13 @@ export function registerRecommendationsCommands(program: Command): void {
 
         if (opts.verbose) console.error(`GET /${accountId}/recommendations`);
 
+        const params: Record<string, string> = {};
+        if (opts.limit) params.limit = opts.limit;
+
         const result = await graphRequestWithRetry<RecommendationsData>(
           `/${accountId}/recommendations`,
           token,
+          { params },
         );
 
         if (opts.output === 'json') {
