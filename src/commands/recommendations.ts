@@ -26,12 +26,15 @@ export function registerRecommendationsCommands(program: Command): void {
         const token = requireAccessToken(opts.accessToken);
         const accountId = requireAccountId(opts.accountId);
 
-        if (opts.verbose) console.error(`POST /${accountId}/recommendations`);
+        if (opts.verbose) console.error(`GET /${accountId}/recommendations`);
+
+        const params: Record<string, string> = {};
+        if (opts.limit) params.limit = opts.limit;
 
         const result = await graphRequestWithRetry<RecommendationsData>(
           `/${accountId}/recommendations`,
           token,
-          { method: 'POST' },
+          { params },
         );
 
         if (opts.output === 'json') {

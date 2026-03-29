@@ -60,6 +60,7 @@ All list commands accept `--limit`, `--after`, `--access-token`, `-o`, `-v`. Cre
 | `intel run [date-preset]` | Full pipeline: fetch → summarize → prepare | Default `last_14d`. Options: `last_7d`, `last_14d`, `last_30d` |
 | `intel defaults` | Compute target KPI defaults | `--account-id`, `--access-token` |
 | `intel scan` | Creative scan for onboarding | `--account-id`, `--access-token` |
+| `intel recommendations list` | Fetch Meta AI recommendations for account | `--account-id`, `--access-token` |
 
 ## Intel Pipeline
 
@@ -76,7 +77,7 @@ Key behaviors:
 - Symlinks (`campaigns-master.json`, `creatives-master.json`, `account-master.json`) use force-overwrite to handle same-minute re-runs.
 - `config.json` keys are auto-migrated from v1 → v2 format on each run.
 
-Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `creative-media.json`, `pipeline-status.json`.
+Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `creative-media.json`, `pipeline-status.json`, `recommendations.json` (optional — skipped if account lacks AI recommendations permission).
 
 ## Non-Obvious Behaviors
 
@@ -88,6 +89,8 @@ Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `f
 - Budgets are in the account's minor currency unit (cents for USD, paisa for INR) — divide by 100 for display.
 - `campaigns create` default status is `PAUSED` — campaigns do not go live automatically.
 - Intel metrics use omni-first extraction (`omni_purchase` preferred over `purchase`) with base fallback. See `metrics.ts` for the full action-type priority.
+- `insights` diagnostic ranking fields (`quality_ranking`, `engagement_rate_ranking`, `conversion_rate_ranking`) are ad-level only — Meta rejects them for campaign/adset/account queries. They live in a separate `AD_INSIGHT_FIELDS` constant.
+- Optional pipeline outputs (e.g., `recommendations.json`) must not be in `expectedFiles` — doing so causes `status: "partial"` for accounts that simply lack the required API permission.
 
 ## Output Format
 

@@ -75,4 +75,4 @@ Other duplicates (`web_in_store_purchase`, `onsite_web_purchase`, `onsite_web_ap
 
 ## Currency
 
-All monetary values are in the account's currency. Budget values from the API are in minor units (cents for USD, paisa for INR) — divide by 100 for display.
+All monetary values are in the account's currency. Budget values from the API are in minor units (cents for USD, paisa for INR) — divide by 100 for display. Note: this applies to raw API responses only. The pipeline's analysis output files (account-health.json, etc.) are already converted to display units — do not convert again.

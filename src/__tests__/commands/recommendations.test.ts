@@ -20,7 +20,7 @@ describe('recommendations API integration', () => {
     nock.cleanAll();
   });
 
-  it('should fetch account recommendations via POST', async () => {
+  it('should fetch account recommendations via GET', async () => {
     const mockResponse = {
       opportunity_score: 82,
       data: [
@@ -40,14 +40,14 @@ describe('recommendations API integration', () => {
     };
 
     nock(BASE_URL)
-      .post('/v21.0/act_123456/recommendations')
+      .get('/v21.0/act_123456/recommendations')
+      .query(true)
       .reply(200, mockResponse);
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');
     const result = await graphRequestWithRetry<typeof mockResponse>(
       '/act_123456/recommendations',
       TOKEN,
-      { method: 'POST' },
     );
 
     expect(result.opportunity_score).toBe(82);
@@ -63,14 +63,14 @@ describe('recommendations API integration', () => {
     };
 
     nock(BASE_URL)
-      .post('/v21.0/act_999/recommendations')
+      .get('/v21.0/act_999/recommendations')
+      .query(true)
       .reply(200, mockResponse);
 
     const { graphRequestWithRetry } = await import('../../lib/http.js');
     const result = await graphRequestWithRetry<typeof mockResponse>(
       '/act_999/recommendations',
       TOKEN,
-      { method: 'POST' },
     );
 
     expect(result.opportunity_score).toBe(0);
