@@ -9,9 +9,10 @@ license: MIT
 compatibility: >
   Requires meta-ads CLI (npm i -g meta-ads) and optionally ffmpeg/ffprobe
   for visual creative analysis. Node.js >= 20.
+argument-hint: "[date-preset | reconfigure]"
 metadata:
   author: gupsammy
-  version: "3.0"
+  version: "3.1"
 ---
 
 # Meta Ads Intelligence
@@ -22,7 +23,7 @@ Arguments: `$ARGUMENTS` — optional date preset (default: last_14d). Valid: las
 
 ## Data Architecture
 
-The CLI handles all data pulling, summarization, and computation. The pipeline produces 7 output files; the agent reads 6 directly (creative-media.json is consumed internally by the pipeline for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
+The CLI handles all data pulling, summarization, and computation. The pipeline produces 9 output files; the agent reads 8 directly (creative-media.json is consumed internally by the pipeline for visual artifact extraction). All analysis files are objective-aware: data is grouped by campaign objective with per-objective KPIs and classifications.
 
 ```
 ~/.meta-ads-intel/
@@ -33,11 +34,13 @@ The CLI handles all data pulling, summarization, and computation. The pipeline p
 │       ├── _raw/          # raw API responses — NEVER read these
 │       ├── _summaries/    # intermediate summaries — NEVER read these
 │       ├── _recent/       # recent window summaries (for trends)
-│       ├── account-health.json     ── agent reads these 6 ──
+│       ├── account-health.json     ── agent reads these 8 ──
 │       ├── budget-actions.json
 │       ├── funnel.json
 │       ├── trends.json
 │       ├── creative-analysis.json
+│       ├── fatigue.json              # may be absent (daily data needed)
+│       ├── report.json               # pre-computed summary for brief
 │       ├── recommendations.json      # may be absent (see Step 4)
 │       ├── creative-media.json     # internal pipeline use only
 │       └── pipeline-status.json    # check before reading analysis files
@@ -73,7 +76,7 @@ Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, co
 meta-ads intel run $ARGUMENTS -o json
 ```
 
-This command runs the full pipeline: pull raw API data → summarize → compute 7 analysis files → extract visual creative artifacts (if ffmpeg available).
+This command runs the full pipeline: pull raw API data → summarize → compute 9 analysis files → extract visual creative artifacts (if ffmpeg available).
 
 If ffmpeg is not available, the command logs a note to stderr. Note this in the analysis — visual creative analysis was skipped, and the user can install ffmpeg (`brew install ffmpeg`) for future runs.
 
@@ -87,13 +90,13 @@ The `creatives` field is present only when ffmpeg extracted visual artifacts.
 
 Read `run_dir` from the output — all subsequent reads come from this directory. If `status` is `"partial"`, check `files_skipped` and `warnings` — report missing data to the user before proceeding. Only read files listed in `files_produced`. Proceed with analysis for all produced files. For each step that requires a missing file, skip that step and note "Skipped: [filename] not produced" in the decision brief. Never abort the full analysis because one file is missing.
 
-If warnings mention truncation or data limits, note this prominently in Step 9: "Analysis covers a capped sample of ads. Rankings reflect the pipeline's top/bottom selection, not the full ad set."
+If warnings mention truncation or data limits, note this prominently in Step 10: "Analysis covers a capped sample of ads. Rankings reflect the pipeline's top/bottom selection, not the full ad set."
 
 ### 3. Account Health
 
 Read `account-health.json` from the run directory.
 
-This contains per-objective sections keyed by objective name (e.g., `OUTCOME_SALES`, `OUTCOME_TRAFFIC`). Each section has its own KPIs and target comparisons. The `primary_objective` field indicates which objective gets the most weight in the scorecard.
+This contains per-objective sections keyed by objective name (e.g., `OUTCOME_SALES`, `OUTCOME_TRAFFIC`). If legacy objective names appear (e.g., `CONVERSIONS`, `LINK_CLICKS`), consult `references/objective-map.json` to map them to modern OUTCOME_* keys. Each section has its own KPIs and target comparisons. The `primary_objective` field indicates which objective gets the most weight in the scorecard.
 
 For each objective present, compare the KPI fields in that objective's block against the corresponding `target_*` fields. Use `references/thresholds.md` for objective-specific KPI definitions and interpretation rules. Flag any KPI missing target by >20%. If `target_cpv` is present in config for Awareness campaigns, also evaluate CPV.
 
@@ -117,9 +120,10 @@ Do not list all recommendations verbatim. Prioritize by `estimated_impact_score`
 
 Read `budget-actions.json` from the run directory.
 
-Per-objective sections, each pre-classified into scale/reduce/pause/refresh/maintain buckets with reason strings. Each objective uses its own KPIs for classification (see `references/thresholds.md`). The agent's job is to add judgment:
+Per-objective sections, each pre-classified into scale/reduce/pause/refresh/bleeders/maintain buckets with reason strings. Each objective uses its own KPIs for classification (see `references/thresholds.md`). The agent's job is to add judgment:
 
-- Learning phase? New campaigns (< 7 days) classified as "reduce" or "pause" may need protection.
+- **Bleeders first**: Lead with the `bleeders` bucket — these are adsets with zero conversions despite spending above the min_spend threshold. They are the most urgent action items (money literally wasted). Report each bleeder's adset name, objective, spend, and reason. Recommend immediate pause. If bleeders make up >50% of evaluated adsets in an objective, escalate: this signals a campaign-level targeting or creative strategy problem, not individual adset issues — recommend reviewing the campaign's audience, creative, and offer before pausing everything.
+- Learning phase? New campaigns (< 7 days) classified as "reduce" or "pause" may need protection. Also applies to bleeders — a new campaign with zero conversions in its first 3 days is not necessarily a bleeder, it may still be in the learning phase (~50 conversions needed to exit).
 - Scale recommendations — suggest budget increases proportional to outperformance: 15-20% for adsets 20-40% above target, 25-40% for adsets >40% above. Cap at 50% per adjustment to avoid destabilizing Meta's learning algorithm.
 - Pause recommendations — check if the adset is the only one in its campaign before recommending pause.
 - Cross-objective context: check campaign names for explicit funnel indicators (e.g., "TOFU", "Retargeting", "Remarketing") before inferring cross-objective relationships. A traffic campaign feeding into a sales funnel may deserve more patience even if its own CPC is high.
@@ -171,7 +175,24 @@ Identify concerning patterns: accelerating fatigue (frequency rising + KPI decli
 
 If `available: false`: note that trend data requires a comparison window and recommend running with `last_14d` preset (default).
 
-### 8. Creative Analysis
+### 8. Creative Fatigue
+
+Read `fatigue.json` from the run directory — only if listed in `files_produced`. If not produced, skip this step and note "Fatigue analysis skipped — daily ad-level data was not available for this run."
+
+This file contains per-ad fatigue signals computed from daily metrics over the last 7 days. The pipeline tracks three signals per ad: `ctr_declining` (3+ consecutive daily CTR drops, >20% decline from peak), `cpc_rising` (3+ consecutive daily CPC increases, >15% rise from trough), and `frequency_high` (above the configured max_frequency ceiling).
+
+Ads are bucketed into:
+- `rotate`: Fatigued — both CTR declining and frequency high. Recommend immediate creative swap.
+- `watch`: Early warning — CTR dipping but frequency still low, or mixed signals. Monitor 48 hours before acting.
+- `healthy`: No fatigue signals detected (or insufficient data — fewer than 3 days tracked).
+
+Report the summary counts (rotate/watch/healthy out of total_ads). For each `rotate` entry, list the ad name, campaign, signals, spend, peak CTR vs latest CTR, and the decline percentage. For `watch` entries, list the top 3 by spend with their signals.
+
+Cross-reference with Step 7 (Trends): if a campaign appears in both trend alerts (KPI deteriorating) and has multiple rotate-flagged ads, this is a strong confirmation of creative exhaustion — call it out explicitly.
+
+Cross-reference with Step 5 (Budget Actions): if an adset flagged as `refresh` (frequency > ceiling) also contains rotate-flagged ads, the fatigue signal is confirmed from two independent analyses.
+
+### 9. Creative Analysis
 
 Read `creative-analysis.json` from the run directory. This is the highest-value analysis step — where agent intelligence matters most. Do not skip or abbreviate any sub-step.
 
@@ -207,26 +228,30 @@ For the primary objective (and any other objective with >=5% of total spend):
    - Partial diagnostics (e.g., quality_ranking present but engagement/conversion UNKNOWN): common for non-conversion objectives like Traffic or Awareness. Note which fields are available and analyze only those; do not treat missing fields as negative signals.
    - If diagnostic fields are absent from all entries (older pipeline version), skip this sub-step
 
-### 9. Decision Brief
+### 10. Decision Brief
 
-**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the file with the second-most-recent timestamp (the current run's file is written in Step 10 after the brief). Compare `primary_kpis` fields matching the primary objective and compute deltas (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health.
+**Pipeline summary scaffold**: Read `report.json` from the run directory. This contains pre-computed KPI snapshots, budget summaries (including bleeders), funnel bottlenecks, trend alerts, creative highlights, and auto-generated action items. Use this as the structural backbone — it ensures consistency between what the pipeline computed and what the brief reports. Layer agent judgment on top: copy psychology insights, cross-objective synergies, recommendation cross-referencing, and fatigue context that the pipeline cannot compute.
+
+**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the file with the second-most-recent timestamp (the current run's file is written in Step 11 after the brief). Compare `primary_kpis` fields matching the primary objective and compute deltas (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health. Also compare `fatigue_summary` if available in the prior report — escalating fatigue (more rotate-flagged ads than last run) is a significant trend.
 
 If the account has zero total spend in the analysis period, focus the brief on setup recommendations (create campaigns, define audiences, upload creatives). Do not synthesize empty data into action items.
 
 Synthesize all analysis into:
 
-- Account Health: total spend, per-objective spend breakdown, primary objective KPIs vs targets (+ vs. last analysis if available)
+- Account Health: total spend, per-objective spend breakdown, primary objective KPIs vs targets (+ vs. last analysis if available). Source from `report.json` `kpi_snapshot`.
+- Budget Bleeders: if `report.json` `bleeders.count` > 0, call out total bleeding spend and list each bleeder. This is the most urgent section — money wasted with zero return.
 - Trends: period vs recent scorecard per objective, biggest movers
+- Creative Fatigue: if Step 8 found rotate-flagged ads, summarize here with concrete rotation recommendations. Cross-reference with trend alerts and refresh-classified adsets.
 - Meta Opportunity Score: if recommendations.json was read in Step 4, include the score and note whether Meta's top recommendations align with or contradict our analysis
-- Meta Recommendations Cross-Reference: group Step 4 recommendations into (1) confirms our analysis — recommendation supports the same action direction implied by KPI evidence, (2) surfaces new issues — no existing Step 5-8 finding covers this, (3) conflicts — Meta recommends the opposite action from KPI evidence. Incorporate API-Apply-supported recommendations where they align as quick wins.
-- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Prioritize the primary objective but include cross-objective synergies where campaign names or funnel structure confirm relationships.
+- Meta Recommendations Cross-Reference: group Step 4 recommendations into (1) confirms our analysis — recommendation supports the same action direction implied by KPI evidence, (2) surfaces new issues — no existing Step 5-9 finding covers this, (3) conflicts — Meta recommends the opposite action from KPI evidence. Incorporate API-Apply-supported recommendations where they align as quick wins.
+- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Prioritize the primary objective but include cross-objective synergies where campaign names or funnel structure confirm relationships. Bleeder pauses and fatigued creative rotations should be weighted as high-leverage actions.
 - Risks: fatigue signals, underperforming spend, drifting campaigns across all objectives. Flag any Meta recommendations that conflict with our own analysis as investigation items.
 - Creative Insights: messaging/visual patterns correlating with performance, organized by objective
-- Watch Items: learning-phase campaigns, insufficient-data tests
+- Watch Items: learning-phase campaigns, insufficient-data tests, watch-flagged ads from fatigue analysis
 
 If only one objective is present, omit cross-objective synergy language.
 
-### 10. Save Output
+### 11. Save Output
 
 Write to `~/.meta-ads-intel/reports/`:
 1. `report-{YYYY-MM-DD_HHMM}.md` — full markdown brief
@@ -244,7 +269,8 @@ Write to `~/.meta-ads-intel/reports/`:
   },
   "opportunity_score": N | null,
   "recommendations_count": N,
-  "budget_actions_summary": {"scale": N, "reduce": N, "pause": N, "refresh": N, "maintain": N},
+  "budget_actions_summary": {"scale": N, "reduce": N, "pause": N, "refresh": N, "bleeders": N, "maintain": N},
+  "fatigue_summary": {"rotate": N, "watch": N, "healthy": N} | null,
   "creative_summary": {"winners_count": N, "losers_count": N, "zero_conv_count": N, "zero_conv_spend": N}
 }
 ```
@@ -260,5 +286,5 @@ If this is the user's first analysis, suggest weekly scheduling: "For automated 
 - NEVER read files in `_raw/` directories. These contain verbose API responses with 40+ duplicate action types per row.
 - NEVER read `*-summary.json` files directly. These are intermediate pipeline files.
 - NEVER read `creative-media.json` — it is consumed internally by the pipeline.
-- Only read the 6 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `recommendations.json`. The 7th file (`creative-media.json`) is consumed internally by the pipeline. `recommendations.json` may not always be present — check `files_produced` before reading. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
+- Only read the 8 agent-facing analysis files: `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `fatigue.json`, `report.json`, `recommendations.json`. The 9th file (`creative-media.json`) is consumed internally by the pipeline. `recommendations.json` and `fatigue.json` may not always be present — check `files_produced` before reading. Also read `~/.meta-ads-intel/creatives/manifest.json` and selected frames when visual artifacts exist.
 - All monetary values in analysis files are in the account's currency (not minor units — the pipeline already converts).
