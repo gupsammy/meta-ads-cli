@@ -228,7 +228,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       date_preset: datePreset,
     };
 
-    const [campaignResult, adsetResult, adResult] = await Promise.all([
+    const [campaignResult, adsetResult, adResult, adDailyResult] = await Promise.all([
       paginateAll<Record<string, unknown>>(
         `/${accountId}/insights`,
         token,
@@ -247,17 +247,25 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
         { params: { ...insightsParams, fields: AD_INSIGHT_FIELDS, level: 'ad' } },
         PULL_LIMIT,
       ),
+      paginateAll<Record<string, unknown>>(
+        `/${accountId}/insights`,
+        token,
+        { params: { fields: AD_INSIGHT_FIELDS, date_preset: 'last_7d', level: 'ad', time_increment: '1' } },
+        PULL_LIMIT,
+      ),
     ]);
 
     // Write raw JSON
     writeJson(path.join(rawDir, 'campaigns.json'), { data: campaignResult.data });
     writeJson(path.join(rawDir, 'adsets.json'), { data: adsetResult.data });
     writeJson(path.join(rawDir, 'ads.json'), { data: adResult.data });
+    writeJson(path.join(rawDir, 'ads-daily.json'), { data: adDailyResult.data });
 
     // Check truncation
     checkTruncation(campaignResult.data.length, 'period campaigns', PULL_LIMIT, warnings);
     checkTruncation(adsetResult.data.length, 'period adsets', PULL_LIMIT, warnings);
     checkTruncation(adResult.data.length, 'period ads', PULL_LIMIT, warnings);
+    checkTruncation(adDailyResult.data.length, 'daily ads', PULL_LIMIT, warnings);
 
     // ── Master files ──
 
@@ -330,7 +338,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     const summariesDir = path.join(runDir, '_summaries');
     fs.mkdirSync(summariesDir, { recursive: true });
 
-    const summaryFiles = ['campaigns-summary.json', 'adsets-summary.json', 'ads-summary.json'];
+    const summaryFiles = ['campaigns-summary.json', 'adsets-summary.json', 'ads-summary.json', 'ads-daily-summary.json'];
     for (const file of summaryFiles) {
       const src = path.join(rawDir, file);
       const dest = path.join(summariesDir, file);

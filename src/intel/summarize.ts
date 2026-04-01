@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { InsightsRow, CampaignSummary, AdsetSummary, AdSummary } from './types.js';
+import type { InsightsRow, CampaignSummary, AdsetSummary, AdSummary, DailyAdMetric } from './types.js';
 import { extractMetrics, addDerived } from './metrics.js';
 import { normalizeObjective } from './objective-map.js';
 
@@ -151,6 +151,24 @@ export async function summarize(dir: string): Promise<void> {
         };
       });
       fs.writeFileSync(path.join(dir, 'ads-summary.json'), JSON.stringify(result, null, 2));
+    } catch { /* skip on malformed JSON — same as file missing */ }
+  }
+
+  // Summarize daily ads (for fatigue detection)
+  const adsDailyPath = path.join(dir, 'ads-daily.json');
+  if (fs.existsSync(adsDailyPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(adsDailyPath, 'utf-8'));
+      const rows = unwrapData(raw);
+      const result: DailyAdMetric[] = rows.map((row) => ({
+        ...addDerived(extractMetrics(row as InsightsRow)),
+        ad_id: toNullableString(row.ad_id),
+        ad_name: toNullableString(row.ad_name),
+        campaign_name: toNullableString(row.campaign_name),
+        objective: objectives[String(row.campaign_id ?? '')] ?? 'UNKNOWN',
+        date: String(row.date_start ?? ''),
+      }));
+      fs.writeFileSync(path.join(dir, 'ads-daily-summary.json'), JSON.stringify(result, null, 2));
     } catch { /* skip on malformed JSON — same as file missing */ }
   }
 }

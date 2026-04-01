@@ -1,11 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { CampaignSummary, AdsetSummary, AdSummary, IntelConfig, PipelineStatus } from '../types.js';
+import type { CampaignSummary, AdsetSummary, AdSummary, DailyAdMetric, IntelConfig, PipelineStatus, AccountHealth, BudgetActions, FunnelData, TrendsData, CreativeAnalysis, RecommendationsData } from '../types.js';
 import { computeAccountHealth } from './account-health.js';
 import { computeBudgetActions } from './budget-actions.js';
 import { computeFunnel } from './funnel.js';
 import { computeTrends } from './trends.js';
 import { computeCreativeRanking } from './creative-ranking.js';
+import { computeReport } from './report.js';
+import { computeFatigue } from './fatigue.js';
 
 function readJsonSafe<T>(filePath: string): T | null {
   try {
@@ -49,6 +51,7 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     'trends.json',
     'creative-analysis.json',
     'creative-media.json',
+    'report.json',
   ];
   const produced: string[] = [];
   const skipped: string[] = [];
@@ -59,28 +62,39 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   const adsetsPath = path.join(summariesDir, 'adsets-summary.json');
   const adsPath = path.join(summariesDir, 'ads-summary.json');
 
+  const adsDailyPath = path.join(summariesDir, 'ads-daily-summary.json');
+
   const campaigns = fs.existsSync(campaignsPath) ? readJsonSafe<CampaignSummary[]>(campaignsPath) : null;
   const adsets = fs.existsSync(adsetsPath) ? readJsonSafe<AdsetSummary[]>(adsetsPath) : null;
   const ads = fs.existsSync(adsPath) ? readJsonSafe<AdSummary[]>(adsPath) : null;
+  const dailyAds = fs.existsSync(adsDailyPath) ? readJsonSafe<DailyAdMetric[]>(adsDailyPath) : null;
+
+  // Track computed results for report generation
+  let healthResult: AccountHealth | null = null;
+  let actionsResult: BudgetActions | null = null;
+  let funnelResult: FunnelData | null = null;
+  let trendsResult: TrendsData | null; // always assigned in if/else below
+  let creativeResult: CreativeAnalysis | null = null;
+  let recsResult: RecommendationsData | null = null;
 
   // 1. account-health.json
   if (campaigns) {
-    const health = computeAccountHealth(campaigns, config);
-    writeJson(path.join(runDir, 'account-health.json'), health);
+    healthResult = computeAccountHealth(campaigns, config);
+    writeJson(path.join(runDir, 'account-health.json'), healthResult);
     produced.push('account-health.json');
   }
 
   // 2. budget-actions.json
   if (adsets) {
-    const actions = computeBudgetActions(adsets, config);
-    writeJson(path.join(runDir, 'budget-actions.json'), actions);
+    actionsResult = computeBudgetActions(adsets, config);
+    writeJson(path.join(runDir, 'budget-actions.json'), actionsResult);
     produced.push('budget-actions.json');
   }
 
   // 3. funnel.json
   if (campaigns) {
-    const funnel = computeFunnel(campaigns, config);
-    writeJson(path.join(runDir, 'funnel.json'), funnel);
+    funnelResult = computeFunnel(campaigns, config);
+    writeJson(path.join(runDir, 'funnel.json'), funnelResult);
     produced.push('funnel.json');
   }
 
@@ -89,12 +103,12 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   const recentCampaigns = fs.existsSync(recentPath) ? readJsonSafe<CampaignSummary[]>(recentPath) : null;
 
   if (campaigns) {
-    const trends = computeTrends(campaigns, recentCampaigns);
-    writeJson(path.join(runDir, 'trends.json'), trends);
+    trendsResult = computeTrends(campaigns, recentCampaigns);
+    writeJson(path.join(runDir, 'trends.json'), trendsResult);
     produced.push('trends.json');
   } else {
-    // Always produce trends.json (matches shell behavior)
-    writeJson(path.join(runDir, 'trends.json'), { available: false, reason: 'no campaigns data' });
+    trendsResult = { available: false, reason: 'no campaigns data' };
+    writeJson(path.join(runDir, 'trends.json'), trendsResult);
     produced.push('trends.json');
   }
 
@@ -123,6 +137,7 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     }
 
     const { analysis, media } = computeCreativeRanking(ads, config, creativeUrls);
+    creativeResult = analysis;
     writeJson(path.join(runDir, 'creative-analysis.json'), analysis);
     writeJson(path.join(runDir, 'creative-media.json'), media);
     produced.push('creative-analysis.json');
@@ -133,15 +148,32 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
     produced.push('creative-media.json');
   }
 
-  // 7. recommendations.json (pass-through from _raw)
+  // 7. fatigue.json
+  if (dailyAds) {
+    const fatigue = computeFatigue(dailyAds, config);
+    writeJson(path.join(runDir, 'fatigue.json'), fatigue);
+    produced.push('fatigue.json');
+  }
+
+  // 8. recommendations.json (pass-through from _raw)
   const rawRecsPath = path.join(runDir, '_raw', 'recommendations.json');
   if (fs.existsSync(rawRecsPath)) {
-    const rawRecs = readJsonSafe<Record<string, unknown>>(rawRecsPath);
+    const rawRecs = readJsonSafe<RecommendationsData>(rawRecsPath);
     if (rawRecs) {
+      recsResult = rawRecs;
       writeJson(path.join(runDir, 'recommendations.json'), rawRecs);
       produced.push('recommendations.json');
     }
   }
+
+  // 9. report.json (client-ready summary)
+  const report = computeReport(healthResult, actionsResult, funnelResult, trendsResult, creativeResult, recsResult, config);
+  // Fill date_range from campaigns if available
+  if (campaigns && campaigns.length > 0) {
+    report.date_range = { start: campaigns[0].date_start, stop: campaigns[0].date_stop };
+  }
+  writeJson(path.join(runDir, 'report.json'), report);
+  produced.push('report.json');
 
   // Merge pull-phase warnings
   const pullWarningsPath = path.join(runDir, '_pull-warnings.json');

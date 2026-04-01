@@ -215,7 +215,7 @@ export interface BudgetActionEntry {
   adset_name: string | null;
   campaign_name: string | null;
   objective: string;
-  action: 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain';
+  action: 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain' | 'bleeder';
   reason: string;
   spend: number;
   frequency: number;
@@ -228,6 +228,7 @@ export interface BudgetActionGroup {
   reduce: BudgetActionEntry[];
   pause: BudgetActionEntry[];
   refresh: BudgetActionEntry[];
+  bleeders: BudgetActionEntry[];
   maintain: { count: number; top_by_spend: BudgetActionEntry[] };
   summary: {
     total_evaluated: number;
@@ -235,6 +236,7 @@ export interface BudgetActionGroup {
     reduce: number;
     pause: number;
     refresh: number;
+    bleeders: number;
     maintain: number;
   };
 }
@@ -397,6 +399,101 @@ export interface RecommendationEntry {
 export interface RecommendationsData {
   opportunity_score: number;
   data: RecommendationEntry[];
+}
+
+// ─── Report types (client-ready summary) ────────────────────────
+
+export interface KpiSnapshot {
+  total_spend: number;
+  total_impressions: number;
+  total_reach: number;
+  primary_objective: string;
+  primary_kpis: Record<string, number | null>;
+}
+
+export interface BudgetSummary {
+  total_evaluated: number;
+  scale: number;
+  reduce: number;
+  pause: number;
+  refresh: number;
+  bleeders: number;
+  maintain: number;
+}
+
+export interface BleederSummary {
+  count: number;
+  total_spend: number;
+  entries: Array<{ adset_name: string | null; objective: string; spend: number; reason: string }>;
+}
+
+export interface FunnelSummary {
+  objectives_present: string[];
+  bottlenecks: Array<{ objective: string; stage: string; label: string; rate: number }>;
+}
+
+export interface TrendAlert {
+  campaign_name: string | null;
+  objective: string;
+  flags: string[];
+}
+
+export interface CreativeHighlights {
+  objectives_present: string[];
+  top_winner: { ad_name: string | null; objective: string; metric_name: string; metric_value: number } | null;
+  total_zero_conversion: number;
+  zero_conversion_spend: number;
+}
+
+export interface ReportSection {
+  kpi_snapshot: KpiSnapshot;
+  budget_summary: BudgetSummary;
+  bleeders: BleederSummary;
+  funnel_health: FunnelSummary;
+  trend_alerts: TrendAlert[];
+  creative_highlights: CreativeHighlights;
+  action_items: string[];
+}
+
+export interface Report {
+  generated_at: string;
+  account_name: string;
+  currency: string;
+  date_range: { start: string; stop: string } | null;
+  sections: ReportSection;
+}
+
+// ─── Fatigue types (daily ad-level analysis) ────────────────────────
+
+export interface DailyAdMetric extends DerivedMetrics {
+  ad_id: string | null;
+  ad_name: string | null;
+  campaign_name: string | null;
+  objective: string;
+  date: string;
+}
+
+export interface FatigueEntry {
+  ad_id: string;
+  ad_name: string | null;
+  campaign_name: string | null;
+  objective: string;
+  signals: string[];
+  recommendation: string;
+  peak_ctr: number;
+  latest_ctr: number;
+  ctr_decline_pct: number;
+  latest_frequency: number;
+  latest_cpc: number;
+  spend: number;
+  days_tracked: number;
+}
+
+export interface FatigueData {
+  objectives_present: string[];
+  summary: { total_ads: number; rotate: number; watch: number; healthy: number };
+  rotate: FatigueEntry[];
+  watch: FatigueEntry[];
 }
 
 // ─── Pull types (raw API response shapes) ─────────────────────────
