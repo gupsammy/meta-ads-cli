@@ -17,6 +17,8 @@ import type {
   FunnelSummary,
   TrendAlert,
   CreativeHighlights,
+  CrossRunDelta,
+  DataReport,
   Bottleneck,
 } from '../types.js';
 import { round2 } from '../metrics.js';
@@ -165,6 +167,121 @@ function synthesizeActionItems(
   return items;
 }
 
+/**
+ * Build cross-run KPI deltas by comparing current health KPIs against a prior DataReport.
+ * Returns null if no prior data is available.
+ */
+export function buildCrossRunDelta(
+  currentKpis: Record<string, Record<string, number | null>>,
+  currentFatigue: FatigueData | null,
+  currentBudget: BudgetSummary,
+  priorData: DataReport,
+): CrossRunDelta {
+  const kpiDeltas: CrossRunDelta['kpi_deltas'] = {};
+
+  for (const [obj, currentFields] of Object.entries(currentKpis)) {
+    const priorFields = priorData.primary_kpis[obj];
+    if (!priorFields) continue;
+    kpiDeltas[obj] = {};
+    for (const [key, currentVal] of Object.entries(currentFields)) {
+      const priorVal = priorFields[key] ?? null;
+      let deltaPct: number | null = null;
+      if (typeof currentVal === 'number' && typeof priorVal === 'number' && priorVal !== 0) {
+        deltaPct = Math.round(((currentVal - priorVal) / Math.abs(priorVal)) * 100);
+      }
+      kpiDeltas[obj][key] = { prior: priorVal, current: currentVal, delta_pct: deltaPct };
+    }
+  }
+
+  const fatigueDelta: CrossRunDelta['fatigue_delta'] = priorData.fatigue_summary && currentFatigue
+    ? {
+        prior: priorData.fatigue_summary,
+        current: { rotate: currentFatigue.summary.rotate, watch: currentFatigue.summary.watch, healthy: currentFatigue.summary.healthy },
+      }
+    : null;
+
+  const budgetDelta: CrossRunDelta['budget_delta'] = {
+    prior: priorData.budget_actions_summary,
+    current: currentBudget,
+  };
+
+  return {
+    prior_date: priorData.date,
+    prior_date_preset: priorData.date_preset,
+    kpi_deltas: kpiDeltas,
+    fatigue_delta: fatigueDelta,
+    budget_delta: budgetDelta,
+  };
+}
+
+/**
+ * Build a DataReport from the computed analysis results for persistence to disk.
+ * This enables cross-run comparisons on subsequent runs.
+ */
+export function buildDataReport(
+  health: AccountHealth | null,
+  budgetSummary: BudgetSummary,
+  fatigue: FatigueData | null,
+  creative: CreativeAnalysis | null,
+  recommendations: RecommendationsData | null,
+  datePreset: string,
+  dateStr: string,
+): DataReport {
+  const primaryKpis: Record<string, Record<string, number | null>> = {};
+
+  if (health) {
+    for (const obj of health.objectives_present as string[]) {
+      const objData = health[obj] as Record<string, unknown> | undefined;
+      if (!objData) continue;
+      const kpis: Record<string, number | null> = {};
+      for (const [k, v] of Object.entries(objData)) {
+        // Exclude non-KPI fields from the data report
+        if (['campaign_count', 'spend', 'spend_pct', 'impressions', 'reach'].includes(k)) continue;
+        if (k.startsWith('target_')) continue;
+        if (typeof v === 'number' || v === null) {
+          kpis[k] = v;
+        }
+      }
+      primaryKpis[obj] = kpis;
+    }
+  }
+
+  let winnersCount = 0;
+  let losersCount = 0;
+  let zeroConvCount = 0;
+  let zeroConvSpend = 0;
+
+  if (creative) {
+    for (const key of Object.keys(creative)) {
+      if (key === 'objectives_present' || key === 'cross_campaign_names') continue;
+      const group = creative[key] as { winners: unknown[]; losers: unknown[]; overview: { zero_conversion_count: number; zero_conversion_total_spend: number } } | undefined;
+      if (!group) continue;
+      winnersCount += group.winners.length;
+      losersCount += group.losers.length;
+      zeroConvCount += group.overview.zero_conversion_count;
+      zeroConvSpend += group.overview.zero_conversion_total_spend;
+    }
+  }
+
+  return {
+    date: dateStr,
+    date_preset: datePreset,
+    primary_objective: health?.primary_objective ?? 'UNKNOWN',
+    total_spend: health?.total_spend ?? 0,
+    primary_kpis: primaryKpis,
+    opportunity_score: recommendations?.opportunity_score ?? null,
+    recommendations_count: recommendations?.data?.length ?? 0,
+    budget_actions_summary: budgetSummary,
+    fatigue_summary: fatigue ? { rotate: fatigue.summary.rotate, watch: fatigue.summary.watch, healthy: fatigue.summary.healthy } : null,
+    creative_summary: {
+      winners_count: winnersCount,
+      losers_count: losersCount,
+      zero_conv_count: zeroConvCount,
+      zero_conv_spend: round2(zeroConvSpend),
+    },
+  };
+}
+
 export function computeReport(
   health: AccountHealth | null,
   actions: BudgetActions | null,
@@ -174,6 +291,7 @@ export function computeReport(
   _recommendations: RecommendationsData | null,
   config: IntelConfig,
   fatigue: FatigueData | null = null,
+  priorData: DataReport | null = null,
 ): Report {
   const kpiSnapshot = buildKpiSnapshot(health);
   const budgetSummary = buildBudgetSummary(actions);
@@ -198,6 +316,27 @@ export function computeReport(
     }
   }
 
+  // Build cross-run delta if prior data is available
+  let crossRunDelta: CrossRunDelta | null = null;
+  if (priorData && health) {
+    // Extract per-objective KPIs from health (same logic as buildDataReport)
+    const currentKpis: Record<string, Record<string, number | null>> = {};
+    for (const obj of health.objectives_present as string[]) {
+      const objData = health[obj] as Record<string, unknown> | undefined;
+      if (!objData) continue;
+      const kpis: Record<string, number | null> = {};
+      for (const [k, v] of Object.entries(objData)) {
+        if (['campaign_count', 'spend', 'spend_pct', 'impressions', 'reach'].includes(k)) continue;
+        if (k.startsWith('target_')) continue;
+        if (typeof v === 'number' || v === null) {
+          kpis[k] = v;
+        }
+      }
+      currentKpis[obj] = kpis;
+    }
+    crossRunDelta = buildCrossRunDelta(currentKpis, fatigue, budgetSummary, priorData);
+  }
+
   return {
     generated_at: new Date().toISOString(),
     account_name: config.account_name,
@@ -212,6 +351,7 @@ export function computeReport(
       creative_highlights: creativeHighlights,
       fatigue_by_campaign: fatigueByCampaign,
       creative_winner_stats: creativeWinnerStats,
+      cross_run_delta: crossRunDelta,
       action_items: actionItems,
     },
   };

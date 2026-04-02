@@ -1628,3 +1628,335 @@ describe('cross_campaign_names detection', () => {
     expect(crossCampaign).toEqual([]);
   });
 });
+
+// ─── spend_pct per objective ──────────────────────────────────────
+
+describe('spend_pct per objective', () => {
+  it('computes spend percentage for each objective', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ objective: 'OUTCOME_SALES', spend: 700 }),
+      makeCampaign({ objective: 'OUTCOME_TRAFFIC', spend: 300 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const health = readOutput('account-health.json') as Record<string, unknown>;
+    const sales = health.OUTCOME_SALES as Record<string, unknown>;
+    const traffic = health.OUTCOME_TRAFFIC as Record<string, unknown>;
+    expect(sales.spend_pct).toBe(70);
+    expect(traffic.spend_pct).toBe(30);
+  });
+
+  it('returns 0 when total spend is 0', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ objective: 'OUTCOME_SALES', spend: 0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const health = readOutput('account-health.json') as Record<string, unknown>;
+    const sales = health.OUTCOME_SALES as Record<string, unknown>;
+    expect(sales.spend_pct).toBe(0);
+  });
+});
+
+// ─── Diagnostic status classification ─────────────────────────────
+
+describe('diagnostic status', () => {
+  it('classifies ad as available when all rankings present', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'AVERAGE', conversion_rate_ranking: 'BELOW_AVERAGE_35' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('available');
+  });
+
+  it('classifies ad as insufficient_data when low impressions and unknown rankings', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 300,
+        quality_ranking: 'UNKNOWN', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('insufficient_data');
+  });
+
+  it('classifies ad as ambiguous when 500-999 impressions and unknown rankings', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 750,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('ambiguous');
+  });
+
+  it('classifies ad as placement_ineligible when high impressions and unknown rankings', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'UNKNOWN', engagement_rate_ranking: 'UNKNOWN', conversion_rate_ranking: 'UNKNOWN' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('placement_ineligible');
+  });
+
+  it('classifies ad as partial when some rankings present and others unknown', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'UNKNOWN', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('partial');
+  });
+
+  it('includes diagnostic_status on zero_conversion ads', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0 }),
+      makeAd({ ad_id: 'a2', purchases: 0, roas: 0, spend: 200, impressions: 100,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const zeroAd = (sales.zero_conversion as Record<string, unknown>[])[0];
+    expect(zeroAd.diagnostic_status).toBe('insufficient_data');
+  });
+});
+
+// ─── Diagnostic coverage ──────────────────────────────────────────
+
+describe('diagnostic coverage', () => {
+  it('computes coverage percentage in overview', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 10, roas: 5.0, impressions: 5000,
+        quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'AVERAGE', conversion_rate_ranking: 'AVERAGE' }),
+      makeAd({ ad_id: 'a2', purchases: 3, roas: 1.0, impressions: 300,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const overview = sales.overview as Record<string, unknown>;
+    const coverage = overview.diagnostic_coverage as Record<string, unknown>;
+    expect(coverage.available).toBe(1); // only a1 is 'available'
+    expect(coverage.total).toBe(2);
+    expect(coverage.pct).toBe(50);
+    expect(coverage.account_ineligible).toBe(false);
+  });
+
+  it('detects account_ineligible when all ads have unknown diagnostics', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'UNKNOWN', engagement_rate_ranking: 'UNKNOWN', conversion_rate_ranking: 'UNKNOWN' }),
+      makeAd({ ad_id: 'a2', purchases: 3, roas: 1.0, impressions: 2000,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const overview = sales.overview as Record<string, unknown>;
+    const coverage = overview.diagnostic_coverage as Record<string, unknown>;
+    expect(coverage.available).toBe(0);
+    expect(coverage.account_ineligible).toBe(true);
+  });
+});
+
+// ─── Data report generation ──────────────────────────────────────
+
+describe('data-report.json', () => {
+  it('generates data-report.json with correct schema', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign({ spend: 1000, purchases: 20, revenue: 3000 })]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
+
+    await prepare(tmpDir, configPath);
+    const dataReport = readOutput('data-report.json') as Record<string, unknown>;
+    expect(dataReport.date_preset).toBe('last_14d');
+    expect(dataReport.primary_objective).toBe('OUTCOME_SALES');
+    expect(dataReport.total_spend).toBe(1000);
+    expect(dataReport.primary_kpis).toBeDefined();
+
+    const kpis = dataReport.primary_kpis as Record<string, Record<string, unknown>>;
+    expect(kpis.OUTCOME_SALES).toBeDefined();
+    expect(kpis.OUTCOME_SALES.cpa).toBeDefined();
+    expect(kpis.OUTCOME_SALES.roas).toBeDefined();
+    // KPI fields should NOT include non-KPI fields
+    expect(kpis.OUTCOME_SALES.campaign_count).toBeUndefined();
+    expect(kpis.OUTCOME_SALES.spend).toBeUndefined();
+    expect(kpis.OUTCOME_SALES.impressions).toBeUndefined();
+
+    expect(dataReport.budget_actions_summary).toBeDefined();
+    expect(dataReport.creative_summary).toBeDefined();
+    const creative = dataReport.creative_summary as Record<string, unknown>;
+    expect(creative.winners_count).toBeDefined();
+    expect(creative.losers_count).toBeDefined();
+    expect(creative.zero_conv_count).toBeDefined();
+  });
+
+  it('is included in pipeline-status files_produced', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    const status = await prepare(tmpDir, configPath);
+    expect(status.files_produced).toContain('data-report.json');
+  });
+
+  it('writes data-report to reports directory', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    await prepare(tmpDir, configPath);
+    // Reports dir is derived from configPath parent
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    const files = fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir).filter((f) => f.startsWith('data-')) : [];
+    expect(files.length).toBe(1);
+  });
+
+  it('includes fatigue_summary when fatigue data is available', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const dataReport = readOutput('data-report.json') as Record<string, unknown>;
+    expect(dataReport.fatigue_summary).toBeDefined();
+    const fatigue = dataReport.fatigue_summary as Record<string, number>;
+    expect(fatigue.rotate).toBe(1);
+  });
+});
+
+// ─── Cross-run delta ─────────────────────────────────────────────
+
+describe('cross-run delta', () => {
+  it('report includes cross_run_delta when prior data exists', async () => {
+    // Write prior data-report to reports dir
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const priorReport = {
+      date: '2026-03-20',
+      date_preset: 'last_14d',
+      primary_objective: 'OUTCOME_SALES',
+      total_spend: 800,
+      primary_kpis: { OUTCOME_SALES: { cpa: 40, roas: 2.5, purchases: 16, revenue: 2000 } },
+      opportunity_score: 70,
+      recommendations_count: 3,
+      budget_actions_summary: { total_evaluated: 2, scale: 1, reduce: 0, pause: 0, refresh: 0, bleeders: 1, maintain: 0 },
+      fatigue_summary: { rotate: 1, watch: 2, healthy: 5 },
+      creative_summary: { winners_count: 3, losers_count: 2, zero_conv_count: 1, zero_conv_spend: 100 },
+    };
+    fs.writeFileSync(path.join(reportsDir, 'data-2026-03-20_1000.json'), JSON.stringify(priorReport));
+
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign({ spend: 1000, purchases: 20, revenue: 3000 })]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const delta = sections.cross_run_delta as Record<string, unknown>;
+    expect(delta).not.toBeNull();
+    expect(delta.prior_date).toBe('2026-03-20');
+    expect(delta.prior_date_preset).toBe('last_14d');
+
+    const kpiDeltas = delta.kpi_deltas as Record<string, Record<string, Record<string, unknown>>>;
+    expect(kpiDeltas.OUTCOME_SALES).toBeDefined();
+    expect(kpiDeltas.OUTCOME_SALES.cpa.prior).toBe(40);
+    expect(kpiDeltas.OUTCOME_SALES.cpa.current).toBe(50); // 1000/20 = 50
+    expect(kpiDeltas.OUTCOME_SALES.cpa.delta_pct).toBe(25); // (50-40)/40*100 = 25
+  });
+
+  it('report has null cross_run_delta when no prior data', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    expect(sections.cross_run_delta).toBeNull();
+  });
+
+  it('includes fatigue_delta when both current and prior have fatigue data', async () => {
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const priorReport = {
+      date: '2026-03-20',
+      date_preset: 'last_14d',
+      primary_objective: 'OUTCOME_SALES',
+      total_spend: 800,
+      primary_kpis: { OUTCOME_SALES: { cpa: 40, roas: 2.5 } },
+      opportunity_score: null,
+      recommendations_count: 0,
+      budget_actions_summary: { total_evaluated: 0, scale: 0, reduce: 0, pause: 0, refresh: 0, bleeders: 0, maintain: 0 },
+      fatigue_summary: { rotate: 1, watch: 2, healthy: 5 },
+      creative_summary: { winners_count: 0, losers_count: 0, zero_conv_count: 0, zero_conv_spend: 0 },
+    };
+    fs.writeFileSync(path.join(reportsDir, 'data-2026-03-20_1000.json'), JSON.stringify(priorReport));
+
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const delta = sections.cross_run_delta as Record<string, unknown>;
+    expect(delta).not.toBeNull();
+    const fatigueDelta = delta.fatigue_delta as Record<string, Record<string, number>>;
+    expect(fatigueDelta).not.toBeNull();
+    expect(fatigueDelta.prior.rotate).toBe(1);
+    expect(fatigueDelta.current.rotate).toBe(1);
+  });
+
+  it('includes budget_delta comparing prior and current', async () => {
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const priorReport = {
+      date: '2026-03-20',
+      date_preset: 'last_14d',
+      primary_objective: 'OUTCOME_SALES',
+      total_spend: 800,
+      primary_kpis: { OUTCOME_SALES: { cpa: 40 } },
+      opportunity_score: null,
+      recommendations_count: 0,
+      budget_actions_summary: { total_evaluated: 5, scale: 2, reduce: 1, pause: 0, refresh: 1, bleeders: 1, maintain: 0 },
+      fatigue_summary: null,
+      creative_summary: { winners_count: 0, losers_count: 0, zero_conv_count: 0, zero_conv_spend: 0 },
+    };
+    fs.writeFileSync(path.join(reportsDir, 'data-2026-03-20_1000.json'), JSON.stringify(priorReport));
+
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset({ purchases: 0, roas: 0, spend: 500 })]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const delta = sections.cross_run_delta as Record<string, unknown>;
+    const budgetDelta = delta.budget_delta as Record<string, Record<string, number>>;
+    expect(budgetDelta.prior.scale).toBe(2);
+    expect(budgetDelta.current.bleeders).toBe(1);
+  });
+});

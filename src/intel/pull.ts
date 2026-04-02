@@ -396,7 +396,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
 
     // ── Prepare analysis files ──
     console.error('  Preparing analysis files...');
-    const pipelineStatus = prepare(runDir, skillConfigPath);
+    const pipelineStatus = prepare(runDir, skillConfigPath, datePreset);
 
     // ── Update manifest ──
     updateManifest(dataDir);

@@ -1,12 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { CampaignSummary, AdsetSummary, AdSummary, DailyAdMetric, IntelConfig, PipelineStatus, AccountHealth, BudgetActions, FunnelData, TrendsData, CreativeAnalysis, FatigueData, RecommendationsData } from '../types.js';
+import type { CampaignSummary, AdsetSummary, AdSummary, DailyAdMetric, IntelConfig, PipelineStatus, AccountHealth, BudgetActions, FunnelData, TrendsData, CreativeAnalysis, FatigueData, RecommendationsData, DataReport } from '../types.js';
 import { computeAccountHealth } from './account-health.js';
 import { computeBudgetActions } from './budget-actions.js';
 import { computeFunnel } from './funnel.js';
 import { computeTrends } from './trends.js';
 import { computeCreativeRanking } from './creative-ranking.js';
-import { computeReport } from './report.js';
+import { computeReport, buildDataReport } from './report.js';
 import { computeFatigue } from './fatigue.js';
 
 function readJsonSafe<T>(filePath: string): T | null {
@@ -31,7 +31,7 @@ function writeJson(filePath: string, data: unknown): void {
  * @param runDir - directory containing _summaries/, optionally _recent/ and _raw/
  * @param configPath - path to config.json (defaults to ~/.meta-ads-intel/config.json)
  */
-export function prepare(runDir: string, configPath?: string): PipelineStatus {
+export function prepare(runDir: string, configPath?: string, datePreset: string = 'last_14d'): PipelineStatus {
   const cfgPath = configPath ?? path.join(process.env.HOME ?? '', '.meta-ads-intel', 'config.json');
 
   // Read and validate config
@@ -168,7 +168,18 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   }
 
   // 9. report.json (client-ready summary)
-  const report = computeReport(healthResult, actionsResult, funnelResult, trendsResult, creativeResult, recsResult, config, fatigueResult);
+  // Read prior DataReport for cross-run delta
+  const reportsDir = path.resolve(configPath ? path.dirname(configPath) : path.join(process.env.HOME ?? '', '.meta-ads-intel'), 'reports');
+  let priorData: DataReport | null = null;
+  if (fs.existsSync(reportsDir)) {
+    const dataFiles = fs.readdirSync(reportsDir).filter((f) => f.startsWith('data-') && f.endsWith('.json')).sort();
+    if (dataFiles.length > 0) {
+      // Read the most recent prior data file
+      priorData = readJsonSafe<DataReport>(path.join(reportsDir, dataFiles[dataFiles.length - 1]));
+    }
+  }
+
+  const report = computeReport(healthResult, actionsResult, funnelResult, trendsResult, creativeResult, recsResult, config, fatigueResult, priorData);
   // Fill date_range from campaigns if available
   if (campaigns && campaigns.length > 0) {
     const starts = campaigns.map((c) => c.date_start).filter(Boolean).sort();
@@ -177,6 +188,20 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   }
   writeJson(path.join(runDir, 'report.json'), report);
   produced.push('report.json');
+
+  // 10. data-report.json — structured data for cross-run comparison
+  const budgetSummary = report.sections.budget_summary;
+  // Extract date from runDir name (YYYY-MM-DD_HHMM)
+  const runDirName = path.basename(runDir);
+  const dateStr = runDirName.slice(0, 10); // YYYY-MM-DD
+  const timestamp = runDirName; // full YYYY-MM-DD_HHMM
+  const dataReport = buildDataReport(healthResult, budgetSummary, fatigueResult, creativeResult, recsResult, datePreset, dateStr);
+  writeJson(path.join(runDir, 'data-report.json'), dataReport);
+  produced.push('data-report.json');
+
+  // Also persist to ~/.meta-ads-intel/reports/ for cross-run access
+  fs.mkdirSync(reportsDir, { recursive: true });
+  writeJson(path.join(reportsDir, `data-${timestamp}.json`), dataReport);
 
   // Merge pull-phase warnings
   const pullWarningsPath = path.join(runDir, '_pull-warnings.json');
