@@ -1,4 +1,4 @@
-import type { AdSummary, IntelConfig, CreativeAnalysis, CreativeAdEntry, CreativeZeroEntry, CreativeMediaEntry } from '../types.js';
+import type { AdSummary, IntelConfig, CreativeAnalysis, CreativeAdEntry, CreativeZeroEntry, CreativeMediaEntry, CrossCampaignDuplicate } from '../types.js';
 import { round2 } from '../metrics.js';
 
 interface ObjMeta {
@@ -112,7 +112,7 @@ export function computeCreativeRanking(
   const zeroN = config.analysis?.zero_conversion_n ?? config.analysis?.zero_purchase_n ?? 10;
   const objectives = [...new Set(ads.map((a) => a.objective))].sort();
 
-  const analysis: CreativeAnalysis = { objectives_present: objectives };
+  const analysis: CreativeAnalysis = { objectives_present: objectives, cross_campaign_names: [] };
   const media: CreativeMediaEntry[] = [];
 
   for (const obj of objectives) {
@@ -128,12 +128,20 @@ export function computeCreativeRanking(
     const losers = r.loseN > 0 ? r.withConv.slice(-r.loseN) : [];
     const zeroCapped = r.zeroConv.slice(0, zeroN);
 
+    const winnerStats = {
+      total: winners.length,
+      empty_body: winners.filter((a) => a.creative_body === '').length,
+      video: winners.filter((a) => (a.video_view ?? 0) > 0).length,
+      image_only: winners.filter((a) => (a.video_view ?? 0) === 0).length,
+    };
+
     analysis[obj] = {
       overview: {
         total_ads: r.totalAds,
         with_conversions: r.withConv.length,
         zero_conversion_count: r.zeroConv.length,
         zero_conversion_total_spend: r.zeroConv.reduce((s, a) => s + a.spend, 0),
+        winner_stats: winnerStats,
       },
       winners: winners.map(formatAd),
       losers: losers.map(formatAd),
@@ -187,6 +195,52 @@ export function computeCreativeRanking(
       });
     }
   }
+
+  // Cross-campaign duplicate detection: find ad names that appear as winner
+  // in one objective/campaign and loser in another
+  const winnerMap = new Map<string, { campaign: string; objective: string; metric_value: number }>();
+  const loserMap = new Map<string, { campaign: string; objective: string; metric_value: number }>();
+  for (const obj of objectives) {
+    const group = analysis[obj] as { winners: CreativeAdEntry[]; losers: CreativeAdEntry[] } | undefined;
+    if (!group) continue;
+    const m = objMeta(obj);
+    for (const w of group.winners) {
+      const name = w.ad_name ?? '';
+      if (name) {
+        winnerMap.set(`${name}::${obj}`, {
+          campaign: w.campaign_name ?? '',
+          objective: obj,
+          metric_value: (w as unknown as Record<string, number>)[m.sort as string] ?? 0,
+        });
+      }
+    }
+    for (const l of group.losers) {
+      const name = l.ad_name ?? '';
+      if (name) {
+        loserMap.set(`${name}::${obj}`, {
+          campaign: l.campaign_name ?? '',
+          objective: obj,
+          metric_value: (l as unknown as Record<string, number>)[m.sort as string] ?? 0,
+        });
+      }
+    }
+  }
+
+  const crossCampaign: CrossCampaignDuplicate[] = [];
+  for (const [winKey, winInfo] of winnerMap) {
+    const adName = winKey.split('::')[0];
+    for (const [loseKey, loseInfo] of loserMap) {
+      const loseName = loseKey.split('::')[0];
+      if (adName === loseName && winInfo.campaign !== loseInfo.campaign) {
+        crossCampaign.push({
+          ad_name: adName,
+          winner_in: winInfo,
+          loser_in: loseInfo,
+        });
+      }
+    }
+  }
+  analysis.cross_campaign_names = crossCampaign;
 
   return { analysis, media };
 }

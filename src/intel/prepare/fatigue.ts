@@ -108,6 +108,31 @@ export function computeFatigue(dailyAds: DailyAdMetric[], config: IntelConfig): 
     }
   }
 
+  // Group counts by campaign_name
+  const byCampaign: Record<string, { rotate: number; watch: number; healthy: number }> = {};
+  const ensureCampaign = (name: string) => {
+    if (!byCampaign[name]) byCampaign[name] = { rotate: 0, watch: 0, healthy: 0 };
+  };
+  for (const e of rotate) {
+    const cn = e.campaign_name ?? 'Unknown';
+    ensureCampaign(cn);
+    byCampaign[cn].rotate++;
+  }
+  for (const e of watch) {
+    const cn = e.campaign_name ?? 'Unknown';
+    ensureCampaign(cn);
+    byCampaign[cn].watch++;
+  }
+  // Healthy ads: count from byAd entries that didn't land in rotate/watch
+  const fatiguedAdIds = new Set([...rotate.map((e) => e.ad_id), ...watch.map((e) => e.ad_id)]);
+  for (const [adId, rows] of byAd) {
+    if (!fatiguedAdIds.has(adId)) {
+      const cn = rows[0].campaign_name ?? 'Unknown';
+      ensureCampaign(cn);
+      byCampaign[cn].healthy++;
+    }
+  }
+
   return {
     objectives_present: objectives,
     summary: {
@@ -115,6 +140,7 @@ export function computeFatigue(dailyAds: DailyAdMetric[], config: IntelConfig): 
       rotate: rotate.length,
       watch: watch.length,
       healthy,
+      by_campaign: byCampaign,
     },
     rotate,
     watch,

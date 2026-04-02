@@ -1547,4 +1547,84 @@ describe('fatigue detection', () => {
     expect(summary.rotate).toBe(1);
     expect(summary.healthy).toBe(1);
   });
+
+  it('includes by_campaign counts in fatigue summary', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    const daily = [
+      // Ad 1 in Campaign 1: declining CTR + high freq → rotate
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+      // Ad 2 in Campaign 2: stable → healthy
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-01', ctr: 3.0, frequency: 1.0 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-02', ctr: 3.1, frequency: 1.1 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-03', ctr: 3.0, frequency: 1.2 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-04', ctr: 3.2, frequency: 1.3 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    const summary = fatigue.summary as Record<string, unknown>;
+    const byCampaign = summary.by_campaign as Record<string, Record<string, number>>;
+    expect(byCampaign['Campaign 1'].rotate).toBe(1);
+    expect(byCampaign['Campaign 1'].healthy).toBe(0);
+    expect(byCampaign['Campaign 2'].rotate).toBe(0);
+    expect(byCampaign['Campaign 2'].healthy).toBe(1);
+  });
+});
+
+// ─── Pre-computed creative stats ──────────────────────────────────
+
+describe('creative winner_stats', () => {
+  it('counts empty body and video/image in winner_stats', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 10, roas: 5.0, creative_body: '', video_view: 100 }),
+      makeAd({ ad_id: 'a2', purchases: 8, roas: 4.0, creative_body: 'Buy now!', video_view: 0 }),
+      makeAd({ ad_id: 'a3', purchases: 6, roas: 3.0, creative_body: '', video_view: 0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const overview = sales.overview as Record<string, unknown>;
+    const stats = overview.winner_stats as Record<string, number>;
+    expect(stats.empty_body).toBe(1);
+    expect(stats.video).toBe(1);
+    expect(stats.image_only).toBe(0);
+  });
+});
+
+describe('cross_campaign_names detection', () => {
+  it('detects same ad name as winner in one campaign and loser in another', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      // "Shared Ad" is a winner in Campaign A
+      makeAd({ ad_id: 'a1', ad_name: 'Shared Ad', campaign_name: 'Campaign A', purchases: 10, roas: 5.0, spend: 500 }),
+      // "Shared Ad" is a loser in Campaign B (lower roas, same objective)
+      makeAd({ ad_id: 'a2', ad_name: 'Shared Ad', campaign_name: 'Campaign B', purchases: 2, roas: 0.5, spend: 400 }),
+      // Other ads to ensure ranking works
+      makeAd({ ad_id: 'a3', ad_name: 'Other Ad', campaign_name: 'Campaign A', purchases: 3, roas: 1.0, spend: 300 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const crossCampaign = analysis.cross_campaign_names as Array<Record<string, unknown>>;
+    expect(crossCampaign.length).toBe(1);
+    expect(crossCampaign[0].ad_name).toBe('Shared Ad');
+    expect((crossCampaign[0].winner_in as Record<string, unknown>).campaign).toBe('Campaign A');
+    expect((crossCampaign[0].loser_in as Record<string, unknown>).campaign).toBe('Campaign B');
+  });
+
+  it('returns empty array when no cross-campaign duplicates', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 10, roas: 5.0 }),
+      makeAd({ ad_id: 'a2', ad_name: 'Ad 2', purchases: 3, roas: 1.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const crossCampaign = analysis.cross_campaign_names as unknown[];
+    expect(crossCampaign).toEqual([]);
+  });
 });

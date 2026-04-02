@@ -102,19 +102,21 @@ For each objective present, compare the KPI fields in that objective's block aga
 
 Report `total_spend` and spend breakdown across objectives for context. Note: `total_reach` sums reach across objectives — users reached by multiple campaigns are counted once per campaign, so the total overstates unique reach. Lead with the primary objective's scorecard, then cover others.
 
-### 4. Recommendations (Meta API)
+### 4. Recommendations (Meta API) — LOW PRIORITY
 
 Read `recommendations.json` from the run directory — only if listed in `files_produced`. If not produced, skip this step silently. Recommendations require specific API permissions and may not be available for all accounts.
 
-This file contains Meta's own account-level optimization analysis:
-- `opportunity_score` (0-100): report alongside Step 3 KPIs as a health signal
-- `data` array: each entry has `type`, `description`, `estimated_impact_score` (points), `estimated_impact_pct` (lift %), and `api_apply_supported` (boolean)
+**Important**: Meta's recommendations are self-serving — they optimize for Meta's ad delivery system, not for business outcomes. Treat this data as supplementary context only. Never let a Meta recommendation displace or override a KPI-derived action item from Steps 5-9. Meta recommendations must never appear in the Top 3 Actions.
 
-Note the top recommendations by `estimated_impact_score` for cross-referencing in Step 9. Report `opportunity_score` alongside Step 3 KPIs. Flag `api_apply_supported: true` entries as quick-win candidates (note: CLI cannot apply these yet — flag for manual action in Ads Manager).
+This file contains Meta's own account-level optimization analysis:
+- `opportunity_score` (0-100): report alongside Step 3 KPIs as a reference signal (not a primary health indicator)
+- `data` array: each entry has `type`, `description`, `estimated_impact_score` (points), `estimated_impact_pct` (lift %), and `api_apply_supported` (boolean). Note: actual API format may differ — adapt to whatever fields are present.
+
+Note recommendations for cross-referencing in Step 10, but do not elevate them above the skill's own KPI-based analysis. Report `opportunity_score` alongside Step 3 KPIs as context.
 
 If `recommendations.json` exists but `data` is an empty array, report "Meta returned no current recommendations for this account" and note `opportunity_score`. Do not treat an empty array as an error.
 
-Do not list all recommendations verbatim. Prioritize by `estimated_impact_score` and relevance to the primary objective. Full grouping (confirms/surfaces/conflicts) happens in Step 9 after all analysis is complete.
+Do not list all recommendations verbatim. Briefly note the top entries by relevance to the primary objective. Full grouping (confirms/surfaces/conflicts) happens in Step 10 after all analysis is complete.
 
 ### 5. Budget Actions
 
@@ -186,11 +188,13 @@ Ads are bucketed into:
 - `watch`: Early warning — CTR dipping but frequency still low, or mixed signals. Monitor 48 hours before acting.
 - `healthy`: No fatigue signals detected (or insufficient data — fewer than 3 days tracked).
 
-Report the summary counts (rotate/watch/healthy out of total_ads). For each `rotate` entry, list the ad name, campaign, signals, spend, peak CTR vs latest CTR, and the decline percentage. For `watch` entries, list the top 3 by spend with their signals.
+Report the summary counts (rotate/watch/healthy out of total_ads). Use `summary.by_campaign` for per-campaign breakdowns — these are pre-computed by the pipeline, do not count array entries manually. For each `rotate` entry, list the ad name, campaign, signals, spend, peak CTR vs latest CTR, and the decline percentage. For `watch` entries, list the top 3 by spend with their signals.
 
-Cross-reference with Step 7 (Trends): if a campaign appears in both trend alerts (KPI deteriorating) and has multiple rotate-flagged ads, this is a strong confirmation of creative exhaustion — call it out explicitly.
+Cross-reference with Step 7 (Trends): if a campaign appears in both trend alerts (KPI deteriorating) and has rotate/watch counts > 0 in `summary.by_campaign`, this is a strong confirmation of creative exhaustion — call it out explicitly.
 
 Cross-reference with Step 5 (Budget Actions): if an adset flagged as `refresh` (frequency > ceiling) also contains rotate-flagged ads, the fatigue signal is confirmed from two independent analyses.
+
+**Fatigue override rule**: a `watch` item may be escalated to "pause" in the brief ONLY if it independently qualifies via another analysis — e.g., it also appears in the creative losers list with ROAS < 1.5x, or it is a zero-conversion ad. State the cross-reference explicitly when overriding.
 
 ### 9. Creative Analysis
 
@@ -206,7 +210,7 @@ For traffic, winners are ranked by CTR. Cross-reference CPC — high CTR with hi
 
 For the primary objective (and any other objective with >=5% of total spend):
 
-1. Classify each winner's copy using the Four Horsemen framework from `references/brand-copy.md` (Money/Time/Status/Fear). Focus on the top 5 winners to prevent context bloat on accounts with high `top_n`. State which lever each winning ad pulls and why. If creative_body is empty (video-only ad), note this — it's a signal that video outperforms static copy.
+1. Read `overview.winner_stats` for each objective — this gives pre-computed counts of `total`, `empty_body`, `video`, and `image_only` winners. Use these numbers directly in prose; do not count array entries manually. If `empty_body` > 0, note that video-only ads (no body copy) are among the winners — this signals video outperforms static copy. Classify each winner's copy using the Four Horsemen framework from `references/brand-copy.md` (Money/Time/Status/Fear). Focus on the top 5 winners to prevent context bloat on accounts with high `top_n`. State which lever each winning ad pulls and why.
 
 2. Compare messaging angles: what do winners have in common that losers lack? Look for patterns in specificity vs vagueness, emotional vs rational tone, sentence length, use of numbers, opening hooks. Quote specific copy from winners and losers to illustrate.
 
@@ -214,9 +218,11 @@ For the primary objective (and any other objective with >=5% of total spend):
 
 4. If `~/.meta-ads-intel/creatives/manifest.json` exists (visual artifacts were extracted by the pipeline), read the manifest and then read 2-3 winner frames and 2-3 loser frames via Read tool. Compare visual patterns: opening hooks, text overlays, color palettes, product visibility, video pacing. If manifest doesn't exist, note that visual analysis was skipped (ffmpeg not installed).
 
-5. Synthesize: which creative directions should be scaled (new variants in the same angle), which should be killed, and which of the Four Horsemen (Money/Time/Status/Fear) are absent from the current creative set? Recommend testing the missing angles with specific copy direction tied to the brand context. Note which objective each recommendation applies to.
+5. **Same-name cross-campaign scan**: read `cross_campaign_names` from the top level of creative-analysis.json. This array is pre-computed by the pipeline — each entry contains the ad name, which campaign/objective it won in, and which it lost in. This pattern (same creative winning in one campaign, losing in another) is a high-signal targeting insight — it separates creative quality from audience quality. Flag every instance found.
 
-6. If ad entries include diagnostic ranking fields (`quality_ranking`, `engagement_rate_ranking`, `conversion_rate_ranking` — values like `ABOVE_AVERAGE_35`, `AVERAGE`, `BELOW_AVERAGE_35`, `UNKNOWN`, or empty string), cross-reference diagnostics with metric rankings:
+6. Synthesize: which creative directions should be scaled (new variants in the same angle), which should be killed, and which of the Four Horsemen (Money/Time/Status/Fear) are absent from the current creative set? Recommend testing the missing angles with specific copy direction tied to the brand context. Note which objective each recommendation applies to.
+
+7. If ad entries include diagnostic ranking fields (`quality_ranking`, `engagement_rate_ranking`, `conversion_rate_ranking` — values like `ABOVE_AVERAGE_35`, `AVERAGE`, `BELOW_AVERAGE_35`, `UNKNOWN`, or empty string), cross-reference diagnostics with metric rankings:
    - First, report diagnostic coverage: "Diagnostics available for N of M ads (X%)." This sets expectations for how much of the analysis can be diagnostic-informed.
    - Winner + low quality_ranking (`BELOW_AVERAGE_35` or `BELOW_AVERAGE_10`): targeting is carrying weak creative — recommend creative refresh while keeping targeting settings
    - Loser + high quality_ranking (`ABOVE_AVERAGE_35` or `ABOVE_AVERAGE_20`): good creative stuck in bad targeting or funnel — investigate audience/landing page before killing the ad
@@ -232,7 +238,9 @@ For the primary objective (and any other objective with >=5% of total spend):
 
 **Pipeline summary scaffold**: Read `report.json` from the run directory. This contains pre-computed KPI snapshots, budget summaries (including bleeders), funnel bottlenecks, trend alerts, creative highlights, and auto-generated action items. Use this as the structural backbone — it ensures consistency between what the pipeline computed and what the brief reports. Layer agent judgment on top: copy psychology insights, cross-objective synergies, recommendation cross-referencing, and fatigue context that the pipeline cannot compute.
 
-**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the file with the second-most-recent timestamp (the current run's file is written in Step 11 after the brief). Compare `primary_kpis` fields matching the primary objective and compute deltas (e.g., CPA change, ROAS change since last analysis). Include a "vs. Last Analysis" line in Account Health. Also compare `fatigue_summary` if available in the prior report — escalating fatigue (more rotate-flagged ads than last run) is a significant trend.
+**Cross-run comparison**: Before synthesizing, check for previous report data. If `~/.meta-ads-intel/reports/data-*.json` files exist from earlier runs, read the file with the second-most-recent timestamp (the current run's file is written in Step 11 after the brief). Compare `primary_kpis` fields matching the primary objective and compute numeric deltas with percentages (e.g., "CPA: 1,086 → 1,117, +2.9%"). Include a "vs. Last Analysis" column in the Account Health table with these computed deltas. Also compare `fatigue_summary` if available in the prior report — escalating fatigue (more rotate-flagged ads than last run) is a significant trend. If the prior report predates the fatigue feature (fatigue_summary is null/absent), note "Fatigue baseline established — future runs will compare against this snapshot."
+
+All counts referenced in the brief (fatigue per campaign, winner composition, cross-campaign duplicates, budget action totals) are pre-computed in the JSON files. Read them directly from `report.json` sections `fatigue_by_campaign` and `creative_winner_stats`, and from `creative-analysis.json` field `cross_campaign_names`. Do not count array entries manually.
 
 If the account has zero total spend in the analysis period, focus the brief on setup recommendations (create campaigns, define audiences, upload creatives). Do not synthesize empty data into action items.
 
@@ -242,10 +250,9 @@ Synthesize all analysis into:
 - Budget Bleeders: if `report.json` `bleeders.count` > 0, call out total bleeding spend and list each bleeder. This is the most urgent section — money wasted with zero return.
 - Trends: period vs recent scorecard per objective, biggest movers
 - Creative Fatigue: if Step 8 found rotate-flagged ads, summarize here with concrete rotation recommendations. Cross-reference with trend alerts and refresh-classified adsets.
-- Meta Opportunity Score: if recommendations.json was read in Step 4, include the score and note whether Meta's top recommendations align with or contradict our analysis
-- Meta Recommendations Cross-Reference: group Step 4 recommendations into (1) confirms our analysis — recommendation supports the same action direction implied by KPI evidence, (2) surfaces new issues — no existing Step 5-9 finding covers this, (3) conflicts — Meta recommends the opposite action from KPI evidence. Incorporate API-Apply-supported recommendations where they align as quick wins.
-- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Prioritize the primary objective but include cross-objective synergies where campaign names or funnel structure confirm relationships. Bleeder pauses and fatigued creative rotations should be weighted as high-leverage actions.
-- Risks: fatigue signals, underperforming spend, drifting campaigns across all objectives. Flag any Meta recommendations that conflict with our own analysis as investigation items.
+- Top 3 Actions: highest-leverage changes with specific budget amounts and expected impact. Derived ONLY from our own KPI-based analysis (Steps 5-9). Never include a Meta recommendation as a Top 3 Action. Prioritize the primary objective but include cross-objective synergies where campaign names or funnel structure confirm relationships. Bleeder pauses, fatigued creative rotations, and persistent funnel bottlenecks (checkout-to-purchase < 50% for 2+ consecutive analyses) should be weighted as high-leverage actions.
+- Risks: fatigue signals, underperforming spend, drifting campaigns across all objectives.
+- Meta Recommendations (supplementary): if recommendations.json was read in Step 4, include a brief low-priority section noting (1) which recommendations confirm our analysis, (2) which surface new ideas worth investigating, (3) which conflict with KPI evidence. Present these as "Meta suggests..." not as our recommendations. Do not let Meta's claimed impact percentages drive prioritization — they are self-reported estimates.
 - Creative Insights: messaging/visual patterns correlating with performance, organized by objective
 - Watch Items: learning-phase campaigns, insufficient-data tests, watch-flagged ads from fatigue analysis
 

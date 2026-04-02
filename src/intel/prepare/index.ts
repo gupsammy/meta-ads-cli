@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { CampaignSummary, AdsetSummary, AdSummary, DailyAdMetric, IntelConfig, PipelineStatus, AccountHealth, BudgetActions, FunnelData, TrendsData, CreativeAnalysis, RecommendationsData } from '../types.js';
+import type { CampaignSummary, AdsetSummary, AdSummary, DailyAdMetric, IntelConfig, PipelineStatus, AccountHealth, BudgetActions, FunnelData, TrendsData, CreativeAnalysis, FatigueData, RecommendationsData } from '../types.js';
 import { computeAccountHealth } from './account-health.js';
 import { computeBudgetActions } from './budget-actions.js';
 import { computeFunnel } from './funnel.js';
@@ -76,6 +76,7 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   let trendsResult: TrendsData | null; // always assigned in if/else below
   let creativeResult: CreativeAnalysis | null = null;
   let recsResult: RecommendationsData | null = null;
+  let fatigueResult: FatigueData | null = null;
 
   // 1. account-health.json
   if (campaigns) {
@@ -150,8 +151,8 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
 
   // 7. fatigue.json
   if (dailyAds) {
-    const fatigue = computeFatigue(dailyAds, config);
-    writeJson(path.join(runDir, 'fatigue.json'), fatigue);
+    fatigueResult = computeFatigue(dailyAds, config);
+    writeJson(path.join(runDir, 'fatigue.json'), fatigueResult);
     produced.push('fatigue.json');
   }
 
@@ -167,7 +168,7 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   }
 
   // 9. report.json (client-ready summary)
-  const report = computeReport(healthResult, actionsResult, funnelResult, trendsResult, creativeResult, recsResult, config);
+  const report = computeReport(healthResult, actionsResult, funnelResult, trendsResult, creativeResult, recsResult, config, fatigueResult);
   // Fill date_range from campaigns if available
   if (campaigns && campaigns.length > 0) {
     const starts = campaigns.map((c) => c.date_start).filter(Boolean).sort();

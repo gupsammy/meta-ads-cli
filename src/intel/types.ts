@@ -357,16 +357,30 @@ export interface CreativeObjectiveGroup {
     with_conversions: number;
     zero_conversion_count: number;
     zero_conversion_total_spend: number;
+    winner_stats: {
+      total: number;
+      empty_body: number;
+      video: number;
+      image_only: number;
+    };
   };
   winners: CreativeAdEntry[];
   losers: CreativeAdEntry[];
   zero_conversion: CreativeZeroEntry[];
 }
 
+/** Cross-campaign duplicate: same ad name appears as winner in one context and loser in another */
+export interface CrossCampaignDuplicate {
+  ad_name: string;
+  winner_in: { campaign: string; objective: string; metric_value: number };
+  loser_in: { campaign: string; objective: string; metric_value: number };
+}
+
 /** creative-analysis.json — per-objective winners/losers/zero-conversion */
 export interface CreativeAnalysis {
   objectives_present: string[];
-  [key: string]: CreativeObjectiveGroup | string[];
+  cross_campaign_names: CrossCampaignDuplicate[];
+  [key: string]: CreativeObjectiveGroup | string[] | CrossCampaignDuplicate[];
 }
 
 /** creative-media.json — flat array entry with ad_id + rank + URLs */
@@ -452,6 +466,8 @@ export interface ReportSection {
   funnel_health: FunnelSummary;
   trend_alerts: TrendAlert[];
   creative_highlights: CreativeHighlights;
+  fatigue_by_campaign: Record<string, { rotate: number; watch: number; healthy: number }>;
+  creative_winner_stats: Record<string, { total: number; empty_body: number; video: number; image_only: number }>;
   action_items: string[];
 }
 
@@ -491,7 +507,13 @@ export interface FatigueEntry {
 
 export interface FatigueData {
   objectives_present: string[];
-  summary: { total_ads: number; rotate: number; watch: number; healthy: number };
+  summary: {
+    total_ads: number;
+    rotate: number;
+    watch: number;
+    healthy: number;
+    by_campaign: Record<string, { rotate: number; watch: number; healthy: number }>;
+  };
   rotate: FatigueEntry[];
   watch: FatigueEntry[];
 }

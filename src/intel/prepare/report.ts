@@ -8,6 +8,7 @@ import type {
   CreativeAnalysis,
   CreativeObjectiveGroup,
   RecommendationsData,
+  FatigueData,
   IntelConfig,
   Report,
   KpiSnapshot,
@@ -172,6 +173,7 @@ export function computeReport(
   creative: CreativeAnalysis | null,
   _recommendations: RecommendationsData | null,
   config: IntelConfig,
+  fatigue: FatigueData | null = null,
 ): Report {
   const kpiSnapshot = buildKpiSnapshot(health);
   const budgetSummary = buildBudgetSummary(actions);
@@ -180,6 +182,21 @@ export function computeReport(
   const trendAlerts = buildTrendAlerts(trends);
   const creativeHighlights = buildCreativeHighlights(creative);
   const actionItems = synthesizeActionItems(bleederSummary, trendAlerts, funnelSummary, budgetSummary, config.currency);
+
+  // Extract fatigue by_campaign from fatigue data
+  const fatigueByCampaign = fatigue?.summary?.by_campaign ?? {};
+
+  // Extract winner_stats per objective from creative analysis
+  const creativeWinnerStats: Record<string, { total: number; empty_body: number; video: number; image_only: number }> = {};
+  if (creative) {
+    for (const key of Object.keys(creative)) {
+      if (key === 'objectives_present' || key === 'cross_campaign_names') continue;
+      const group = creative[key] as CreativeObjectiveGroup;
+      if (group?.overview?.winner_stats) {
+        creativeWinnerStats[key] = group.overview.winner_stats;
+      }
+    }
+  }
 
   return {
     generated_at: new Date().toISOString(),
@@ -193,6 +210,8 @@ export function computeReport(
       funnel_health: funnelSummary,
       trend_alerts: trendAlerts,
       creative_highlights: creativeHighlights,
+      fatigue_by_campaign: fatigueByCampaign,
+      creative_winner_stats: creativeWinnerStats,
       action_items: actionItems,
     },
   };
