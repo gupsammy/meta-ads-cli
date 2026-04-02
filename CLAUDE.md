@@ -7,7 +7,7 @@ CLI for the Meta (Facebook) Marketing API v21.0. Manages ad accounts, campaigns,
 ```bash
 pnpm build        # compile with tsup → dist/
 pnpm dev          # tsup --watch
-pnpm test         # vitest run (249 tests across 18 files)
+pnpm test         # vitest run (313 tests across 20 files)
 pnpm lint         # eslint src/
 pnpm typecheck    # tsc --noEmit
 ```
@@ -20,11 +20,15 @@ Binary: `dist/index.js` (via package.json `bin` field). Requires Node >= 20.
 src/
   index.ts              # entry point, registers all commands
   auth.ts               # resolveAccessToken, saveToken, exchangeForLongLivedToken, OAuth flow
-  commands/             # one file per subcommand group (+ setup, update, uninstall)
+  commands/             # one file per subcommand group (+ setup, update, uninstall, recommendations)
   intel/                # analysis pipeline
+    run.ts              # run() entry point — resolves config, calls pull
     pull.ts             # full pipeline orchestrator: fetch → summarize → prepare
     summarize.ts        # compresses raw API JSON into *-summary.json files
-    prepare/            # generates analysis outputs (account-health, budget-actions, funnel, trends, creative-analysis)
+    creatives.ts        # creative asset extraction (thumbnails, video frames via ffmpeg)
+    prepare/            # generates analysis outputs:
+      account-health.ts, budget-actions.ts, funnel.ts, trends.ts,
+      creative-ranking.ts, fatigue.ts, report.ts
     scan.ts             # creative scan for onboarding
     defaults.ts         # compute target defaults from current performance
     metrics.ts          # extractMetrics + deriveMetrics — 27-field extraction from Meta API rows
@@ -49,7 +53,7 @@ Required permissions: `ads_management`, `ads_read`.
 
 ### Core commands
 
-`auth login|status|logout`, `accounts list|get`, `campaigns list|get|create|update`, `adsets list|get|create|update`, `ads list|get|update`, `insights get`, `audiences list|get`, `setup`, `update`, `uninstall`.
+`auth login|status|logout`, `accounts list|get`, `campaigns list|get|create|update`, `adsets list|get|create|update`, `ads list|get|update`, `insights get`, `audiences list|get`, `recommendations list`, `setup`, `update`, `uninstall`.
 
 All list commands accept `--limit`, `--after`, `--access-token`, `-o`, `-v`. Create/update commands accept `--dry-run`. See `meta-ads <command> --help` for full flag details.
 
@@ -60,7 +64,6 @@ All list commands accept `--limit`, `--after`, `--access-token`, `-o`, `-v`. Cre
 | `intel run [date-preset]` | Full pipeline: fetch → summarize → prepare | Default `last_14d`. Options: `last_7d`, `last_14d`, `last_30d` |
 | `intel defaults` | Compute target KPI defaults | `--account-id`, `--access-token` |
 | `intel scan` | Creative scan for onboarding | `--account-id`, `--access-token` |
-| `intel recommendations list` | Fetch Meta AI recommendations for account | `--account-id`, `--access-token` |
 
 ## Intel Pipeline
 
@@ -77,7 +80,7 @@ Key behaviors:
 - Symlinks (`campaigns-master.json`, `creatives-master.json`, `account-master.json`) use force-overwrite to handle same-minute re-runs.
 - `config.json` keys are auto-migrated from v1 → v2 format on each run.
 
-Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `creative-media.json`, `pipeline-status.json`, `recommendations.json` (optional — skipped if account lacks AI recommendations permission).
+Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `funnel.json`, `trends.json`, `creative-analysis.json`, `creative-media.json`, `report.json`, `pipeline-status.json`, `recommendations.json` (optional — skipped if account lacks AI recommendations permission).
 
 ## Non-Obvious Behaviors
 
