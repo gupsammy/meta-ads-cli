@@ -51,7 +51,8 @@ export function computeFatigue(dailyAds: DailyAdMetric[], config: IntelConfig): 
 
     // CPC day-over-day analysis
     const cpcs = rows.map((r) => r.cpc);
-    const minCpc = Math.min(...cpcs.filter((c) => c > 0));
+    const positiveCpcs = cpcs.filter((c) => c > 0);
+    const minCpc = positiveCpcs.length > 0 ? Math.min(...positiveCpcs) : 0;
     let cpcConsecutiveRises = 0;
     let maxCpcRises = 0;
     for (let i = 1; i < cpcs.length; i++) {
@@ -66,7 +67,7 @@ export function computeFatigue(dailyAds: DailyAdMetric[], config: IntelConfig): 
     const cpcRising = maxCpcRises >= 3 && cpcRisePct > 15;
 
     // Frequency check
-    const frequencyHigh = latest.frequency > maxFreqThreshold || latest.frequency > freqHigh;
+    const frequencyHigh = latest.frequency > freqHigh;
 
     // Build signals
     const signals: string[] = [];
@@ -98,8 +99,10 @@ export function computeFatigue(dailyAds: DailyAdMetric[], config: IntelConfig): 
       watch.push(entry);
     } else if (signals.length === 0) {
       healthy++;
+    } else if (signals.length === 1) {
+      entry.recommendation = `Monitor — early ${signals[0].replace('_', ' ')} signal.`;
+      watch.push(entry);
     } else {
-      // Has some signals but doesn't match rotate/watch criteria
       entry.recommendation = 'Monitor — mixed signals detected.';
       watch.push(entry);
     }

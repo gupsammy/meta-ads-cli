@@ -250,7 +250,7 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       paginateAll<Record<string, unknown>>(
         `/${accountId}/insights`,
         token,
-        { params: { fields: AD_INSIGHT_FIELDS, date_preset: 'last_7d', level: 'ad', time_increment: '1' } },
+        { params: { fields: AD_INSIGHT_FIELDS, date_preset: datePreset === 'last_14d' || datePreset === 'last_30d' ? datePreset : 'last_7d', level: 'ad', time_increment: '1' } },
         PULL_LIMIT,
       ),
     ]);

@@ -170,7 +170,9 @@ export function prepare(runDir: string, configPath?: string): PipelineStatus {
   const report = computeReport(healthResult, actionsResult, funnelResult, trendsResult, creativeResult, recsResult, config);
   // Fill date_range from campaigns if available
   if (campaigns && campaigns.length > 0) {
-    report.date_range = { start: campaigns[0].date_start, stop: campaigns[0].date_stop };
+    const starts = campaigns.map((c) => c.date_start).filter(Boolean).sort();
+    const stops = campaigns.map((c) => c.date_stop).filter(Boolean).sort();
+    report.date_range = { start: starts[0], stop: stops[stops.length - 1] };
   }
   writeJson(path.join(runDir, 'report.json'), report);
   produced.push('report.json');

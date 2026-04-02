@@ -136,11 +136,12 @@ function synthesizeActionItems(
   alerts: TrendAlert[],
   funnelSummary: FunnelSummary,
   budgetSummary: BudgetSummary,
+  currency: string,
 ): string[] {
   const items: string[] = [];
 
   if (bleeders.count > 0) {
-    items.push(`Pause ${bleeders.count} bleeding adset${bleeders.count > 1 ? 's' : ''} wasting ${bleeders.total_spend}`);
+    items.push(`Pause ${bleeders.count} bleeding adset${bleeders.count > 1 ? 's' : ''} wasting ${bleeders.total_spend} ${currency}`);
   }
 
   for (const alert of alerts) {
@@ -178,7 +179,7 @@ export function computeReport(
   const funnelSummary = buildFunnelSummary(funnel);
   const trendAlerts = buildTrendAlerts(trends);
   const creativeHighlights = buildCreativeHighlights(creative);
-  const actionItems = synthesizeActionItems(bleederSummary, trendAlerts, funnelSummary, budgetSummary);
+  const actionItems = synthesizeActionItems(bleederSummary, trendAlerts, funnelSummary, budgetSummary, config.currency);
 
   return {
     generated_at: new Date().toISOString(),
