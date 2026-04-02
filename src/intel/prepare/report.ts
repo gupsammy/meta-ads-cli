@@ -112,7 +112,7 @@ function buildCreativeHighlights(creative: CreativeAnalysis | null): CreativeHig
   result.objectives_present = (creative.objectives_present as string[]) ?? [];
 
   for (const key of Object.keys(creative)) {
-    if (key === 'objectives_present') continue;
+    if (key === 'objectives_present' || key === 'cross_campaign_names') continue;
     const group = creative[key] as CreativeObjectiveGroup;
     if (!group?.overview) continue;
     result.total_zero_conversion += group.overview.zero_conversion_count;
@@ -237,7 +237,7 @@ export function buildDataReport(
       for (const [k, v] of Object.entries(objData)) {
         // Exclude non-KPI fields from the data report
         if (['campaign_count', 'spend', 'spend_pct', 'impressions', 'reach'].includes(k)) continue;
-        if (k.startsWith('target_')) continue;
+        if (k.startsWith('target_') || k.endsWith('_vs_target')) continue;
         if (typeof v === 'number' || v === null) {
           kpis[k] = v;
         }
@@ -327,7 +327,7 @@ export function computeReport(
       const kpis: Record<string, number | null> = {};
       for (const [k, v] of Object.entries(objData)) {
         if (['campaign_count', 'spend', 'spend_pct', 'impressions', 'reach'].includes(k)) continue;
-        if (k.startsWith('target_')) continue;
+        if (k.startsWith('target_') || k.endsWith('_vs_target')) continue;
         if (typeof v === 'number' || v === null) {
           kpis[k] = v;
         }
