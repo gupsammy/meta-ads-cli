@@ -12,7 +12,7 @@ compatibility: >
 argument-hint: "[date-preset | reconfigure]"
 metadata:
   author: gupsammy
-  version: "3.1"
+  version: "3.2"
 ---
 
 # Meta Ads Intelligence
@@ -68,7 +68,7 @@ Proceed to Step 1.
 Read `~/.meta-ads-intel/config.json` for account ID, per-objective targets, analysis params, and `primary_objective`.
 Read `references/thresholds.md` for per-objective budget classification rules and interpretation guidance.
 Read `references/metrics.md` for field definitions and per-objective metric interpretation.
-Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, copy specs, forbidden words). Read `~/.meta-ads-intel/brand-context.md` for user's brand context (product, audience, proven hooks). This file is created during onboarding and must exist in analysis mode.
+Read `references/brand-copy.md` for copy psychology framework (Four Horsemen, copy specs, forbidden words). Read `~/.meta-ads-intel/brand-context.md` for user's brand context (product, audience, proven hooks). This file is created during onboarding and must exist in analysis mode. If brand-context.md is missing, warn the user and suggest `/meta-ads-intel reconfigure` to recreate it. Proceed with analysis but note "Creative analysis limited — brand context not available" in the brief.
 
 ### 2. Run Analysis Pipeline
 
@@ -202,9 +202,9 @@ For the primary objective (and any other objective with `spend_pct >= 5` in acco
 
 2. Compare messaging angles: what do winners have in common that losers lack? Look for patterns in specificity vs vagueness, emotional vs rational tone, sentence length, use of numbers, opening hooks. Quote specific copy from winners and losers to illustrate.
 
-3. Flag zero-conversion ads with their total wasted spend. These are budget leaks — recommend pause or replacement with a winning angle. Note which objective each belongs to.
+3. Flag zero-conversion ads with their total wasted spend. These are budget leaks — recommend pause or replacement with a winning angle. Include an Objective column in the zero-conversion table alongside ad name, campaign, spend, and impressions.
 
-4. If `~/.meta-ads-intel/creatives/manifest.json` exists (visual artifacts were extracted by the pipeline), read the manifest and then read 2-3 winner frames and 2-3 loser frames via Read tool. Compare visual patterns: opening hooks, text overlays, color palettes, product visibility, video pacing. If manifest doesn't exist, note that visual analysis was skipped (ffmpeg not installed).
+4. If `~/.meta-ads-intel/creatives/manifest.json` exists (visual artifacts were extracted by the pipeline), read the manifest and then read 2-3 winner frames and 2-3 loser frames via Read tool. Select frames by primary KPI rank — top 2-3 winners and bottom 2-3 losers. Prefer visual diversity (mix of video first-frames and static images) when ranks are close. Compare visual patterns: opening hooks, text overlays, color palettes, product visibility, video pacing. Weave visual observations into the winner/loser narrative rather than isolating them in a separate sub-section. If manifest doesn't exist, note that visual analysis was skipped (ffmpeg not installed).
 
 5. **Same-name cross-campaign scan**: read `cross_campaign_names` from the top level of creative-analysis.json. This array is pre-computed by the pipeline — each entry contains the ad name, which campaign/objective it won in, and which it lost in. This pattern (same creative winning in one campaign, losing in another) is a high-signal targeting insight — it separates creative quality from audience quality. Flag every instance found.
 
@@ -239,11 +239,13 @@ Synthesize all analysis into:
 
 If only one objective is present, omit cross-objective synergy language.
 
+Present sections in this order. Consistent structure across runs allows quick comparison.
+
 ### 11. Save Output
 
-Write `report-{YYYY-MM-DD_HHMM}.md` (full markdown brief) to `~/.meta-ads-intel/reports/`. The `data-{HHMM}.json` file was already written by the pipeline to both the run directory and `~/.meta-ads-intel/reports/` — verify it exists in the reports directory. Use the `HHMM` timestamp from the pipeline run directory to match filenames.
-
-Return concise summary: account health headline, top 3 actions, report paths.
+1. Write `report-{YYYY-MM-DD_HHMM}.md` (full markdown brief) to `~/.meta-ads-intel/reports/`.
+2. Verify `data-{HHMM}.json` exists in `~/.meta-ads-intel/reports/` — if missing, copy from run directory. Use the `HHMM` timestamp from the pipeline run directory to match filenames.
+3. Return concise summary: account health headline, top 3 actions, both file paths.
 
 If this is the user's first analysis, suggest weekly scheduling: "For automated weekly analysis, set up a system scheduler. On macOS: a launchd plist at `~/Library/LaunchAgents/com.meta-ads-intel.weekly.plist` that runs `claude -p '/meta-ads-intel'`. On Linux: a crontab entry. Requires Claude Code CLI on PATH." Offer to create the plist/crontab if the user is interested.
 
