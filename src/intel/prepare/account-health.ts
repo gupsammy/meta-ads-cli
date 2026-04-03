@@ -46,6 +46,7 @@ export function computeAccountHealth(campaigns: CampaignSummary[], config: Intel
     const base: Record<string, number | string | null> = {
       campaign_count: group.length,
       spend,
+      spend_pct: totalSpend > 0 ? Math.round(spend / totalSpend * 100) : 0,
       impressions: imp,
       reach: rch,
     };

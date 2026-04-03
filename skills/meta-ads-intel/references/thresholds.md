@@ -8,6 +8,7 @@ Applied to each adset with spend above min_spend threshold. Classification is pe
 
 ### Universal rules (all objectives)
 - Refresh: frequency > max frequency ceiling — audience saturation, needs new creative or audience
+- Bleeder: zero conversions (objective-specific: zero purchases for Sales, zero clicks for Traffic, etc.) with spend >= min_spend threshold. Bleeders are the most urgent action — money spent with no return at all. Distinct from "pause" which catches poor-but-nonzero performance.
 - Min spend filter: adsets below `targets.global.min_spend` are excluded from classification
 
 ### OUTCOME_SALES

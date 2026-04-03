@@ -1,4 +1,4 @@
-import type { AdSummary, IntelConfig, CreativeAnalysis, CreativeAdEntry, CreativeZeroEntry, CreativeMediaEntry } from '../types.js';
+import type { AdSummary, IntelConfig, CreativeAnalysis, CreativeAdEntry, CreativeZeroEntry, CreativeMediaEntry, CrossCampaignDuplicate, DiagnosticStatus } from '../types.js';
 import { round2 } from '../metrics.js';
 
 interface ObjMeta {
@@ -18,6 +18,27 @@ function objMeta(obj: string): ObjMeta {
   if (obj === 'OUTCOME_LEADS') return { conv: 'lead', sort: 'cpl', dir: 'asc', zero_label: 'zero_leads' };
   if (obj === 'OUTCOME_APP_PROMOTION') return { conv: 'app_install', sort: 'cpi', dir: 'asc', zero_label: 'zero_installs' };
   return { conv: 'purchases', sort: 'spend', dir: 'desc', zero_label: 'zero_conversion' };
+}
+
+/**
+ * Classify an ad's diagnostic ranking fields into a status category.
+ * Implements the SKILL.md decision tree deterministically so the agent reads rather than computes.
+ */
+function classifyDiagnostic(a: { quality_ranking?: string; engagement_rate_ranking?: string; conversion_rate_ranking?: string; impressions: number }): DiagnosticStatus {
+  const rankings = [a.quality_ranking ?? '', a.engagement_rate_ranking ?? '', a.conversion_rate_ranking ?? ''];
+  const isUnknownOrEmpty = (r: string) => r === '' || r === 'UNKNOWN';
+  const allUnknown = rankings.every(isUnknownOrEmpty);
+  const someUnknown = rankings.some(isUnknownOrEmpty);
+  const noneUnknown = !someUnknown;
+
+  if (noneUnknown) return 'available';
+  if (allUnknown) {
+    if (a.impressions < 500) return 'insufficient_data';
+    if (a.impressions < 1000) return 'ambiguous';
+    return 'placement_ineligible';
+  }
+  // Some present, others UNKNOWN
+  return 'partial';
 }
 
 function formatAd(a: AdSummary): CreativeAdEntry {
@@ -48,6 +69,7 @@ function formatAd(a: AdSummary): CreativeAdEntry {
     quality_ranking: a.quality_ranking ?? '',
     engagement_rate_ranking: a.engagement_rate_ranking ?? '',
     conversion_rate_ranking: a.conversion_rate_ranking ?? '',
+    diagnostic_status: classifyDiagnostic(a),
   };
 }
 
@@ -66,6 +88,7 @@ function formatZero(a: AdSummary): CreativeZeroEntry {
     quality_ranking: a.quality_ranking ?? '',
     engagement_rate_ranking: a.engagement_rate_ranking ?? '',
     conversion_rate_ranking: a.conversion_rate_ranking ?? '',
+    diagnostic_status: classifyDiagnostic(a),
   };
 }
 
@@ -112,7 +135,7 @@ export function computeCreativeRanking(
   const zeroN = config.analysis?.zero_conversion_n ?? config.analysis?.zero_purchase_n ?? 10;
   const objectives = [...new Set(ads.map((a) => a.objective))].sort();
 
-  const analysis: CreativeAnalysis = { objectives_present: objectives };
+  const analysis: CreativeAnalysis = { objectives_present: objectives, cross_campaign_names: [] };
   const media: CreativeMediaEntry[] = [];
 
   for (const obj of objectives) {
@@ -128,16 +151,39 @@ export function computeCreativeRanking(
     const losers = r.loseN > 0 ? r.withConv.slice(-r.loseN) : [];
     const zeroCapped = r.zeroConv.slice(0, zeroN);
 
+    const winnerStats = {
+      total: winners.length,
+      empty_body: winners.filter((a) => a.creative_body === '').length,
+      video: winners.filter((a) => (a.video_view ?? 0) > 0).length,
+      image_only: winners.filter((a) => (a.video_view ?? 0) === 0).length,
+    };
+
+    const formattedWinners = winners.map(formatAd);
+    const formattedLosers = losers.map(formatAd);
+    const formattedZero = zeroCapped.map(formatZero);
+
+    // Compute diagnostic coverage across all formatted entries
+    const allEntries = [...formattedWinners, ...formattedLosers, ...formattedZero];
+    const diagAvailable = allEntries.filter((e) => e.diagnostic_status === 'available' || e.diagnostic_status === 'partial').length;
+    const allIneligible = allEntries.length > 0 && allEntries.every((e) => e.diagnostic_status === 'insufficient_data' || e.diagnostic_status === 'ambiguous' || e.diagnostic_status === 'placement_ineligible');
+
     analysis[obj] = {
       overview: {
         total_ads: r.totalAds,
         with_conversions: r.withConv.length,
         zero_conversion_count: r.zeroConv.length,
         zero_conversion_total_spend: r.zeroConv.reduce((s, a) => s + a.spend, 0),
+        winner_stats: winnerStats,
+        diagnostic_coverage: {
+          available: diagAvailable,
+          total: allEntries.length,
+          pct: allEntries.length > 0 ? Math.round(diagAvailable / allEntries.length * 100) : 0,
+          account_ineligible: allIneligible,
+        },
       },
-      winners: winners.map(formatAd),
-      losers: losers.map(formatAd),
-      zero_conversion: zeroCapped.map(formatZero),
+      winners: formattedWinners,
+      losers: formattedLosers,
+      zero_conversion: formattedZero,
     };
 
     // Build media entries
@@ -187,6 +233,52 @@ export function computeCreativeRanking(
       });
     }
   }
+
+  // Cross-campaign duplicate detection: find ad names that appear as winner
+  // in one objective/campaign and loser in another
+  const winnerMap = new Map<string, { campaign: string; objective: string; metric_value: number }>();
+  const loserMap = new Map<string, { campaign: string; objective: string; metric_value: number }>();
+  for (const obj of objectives) {
+    const group = analysis[obj] as { winners: CreativeAdEntry[]; losers: CreativeAdEntry[] } | undefined;
+    if (!group) continue;
+    const m = objMeta(obj);
+    for (const w of group.winners) {
+      const name = w.ad_name ?? '';
+      if (name) {
+        winnerMap.set(`${name}::${obj}`, {
+          campaign: w.campaign_name ?? '',
+          objective: obj,
+          metric_value: (w as unknown as Record<string, number>)[m.sort as string] ?? 0,
+        });
+      }
+    }
+    for (const l of group.losers) {
+      const name = l.ad_name ?? '';
+      if (name) {
+        loserMap.set(`${name}::${obj}`, {
+          campaign: l.campaign_name ?? '',
+          objective: obj,
+          metric_value: (l as unknown as Record<string, number>)[m.sort as string] ?? 0,
+        });
+      }
+    }
+  }
+
+  const crossCampaign: CrossCampaignDuplicate[] = [];
+  for (const [winKey, winInfo] of winnerMap) {
+    const adName = winKey.split('::')[0];
+    for (const [loseKey, loseInfo] of loserMap) {
+      const loseName = loseKey.split('::')[0];
+      if (adName === loseName && winInfo.campaign !== loseInfo.campaign) {
+        crossCampaign.push({
+          ad_name: adName,
+          winner_in: winInfo,
+          loser_in: loseInfo,
+        });
+      }
+    }
+  }
+  analysis.cross_campaign_names = crossCampaign;
 
   return { analysis, media };
 }

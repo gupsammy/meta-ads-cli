@@ -1,13 +1,29 @@
 import type { AdsetSummary, IntelConfig, BudgetActions, BudgetActionEntry, BudgetActionGroup } from '../types.js';
 import { round2 } from '../metrics.js';
 
-type Action = 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain';
+type Action = 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain' | 'bleeder';
 
 interface Classification { action: Action; reason: string }
 
-function classifyAdset(a: AdsetSummary, obj: string, targets: Record<string, number>, maxFreq: number): Classification {
+function classifyAdset(a: AdsetSummary, obj: string, targets: Record<string, number>, maxFreq: number, bleedThreshold: number): Classification {
   if (a.frequency > maxFreq) {
     return { action: 'refresh', reason: `frequency ${a.frequency} exceeds ceiling ${maxFreq}` };
+  }
+
+  // Bleeder detection: zero conversions with meaningful spend
+  if (a.spend >= bleedThreshold) {
+    if (obj === 'OUTCOME_SALES' && a.purchases === 0)
+      return { action: 'bleeder', reason: `bleeding: zero purchases with spend ${a.spend}` };
+    if (obj === 'OUTCOME_TRAFFIC' && a.link_clicks === 0)
+      return { action: 'bleeder', reason: `bleeding: zero link clicks with spend ${a.spend}` };
+    if (obj === 'OUTCOME_LEADS' && a.lead === 0)
+      return { action: 'bleeder', reason: `bleeding: zero leads with spend ${a.spend}` };
+    if (obj === 'OUTCOME_APP_PROMOTION' && a.app_install === 0)
+      return { action: 'bleeder', reason: `bleeding: zero installs with spend ${a.spend}` };
+    if (obj === 'OUTCOME_ENGAGEMENT' && a.post_engagement === 0)
+      return { action: 'bleeder', reason: `bleeding: zero engagement with spend ${a.spend}` };
+    if (obj === 'OUTCOME_AWARENESS' && a.impressions === 0)
+      return { action: 'bleeder', reason: `bleeding: zero impressions with spend ${a.spend}` };
   }
 
   if (obj === 'OUTCOME_SALES') {
@@ -156,7 +172,7 @@ export function computeBudgetActions(adsets: AdsetSummary[], config: IntelConfig
     const working = filtered.length === 0 && allObj.length > 0 ? allObj : filtered;
 
     const classified: BudgetActionEntry[] = working.map((a) => {
-      const { action, reason } = classifyAdset(a, obj, objTargets, maxFreq);
+      const { action, reason } = classifyAdset(a, obj, objTargets, maxFreq, minSpend);
       return {
         adset_name: a.adset_name,
         campaign_name: a.campaign_name,
@@ -173,6 +189,7 @@ export function computeBudgetActions(adsets: AdsetSummary[], config: IntelConfig
     const reduce = classified.filter((e) => e.action === 'reduce');
     const pause = classified.filter((e) => e.action === 'pause');
     const refresh = classified.filter((e) => e.action === 'refresh');
+    const bleeders = classified.filter((e) => e.action === 'bleeder');
     const maintain = classified.filter((e) => e.action === 'maintain');
 
     const group: BudgetActionGroup = {
@@ -180,6 +197,7 @@ export function computeBudgetActions(adsets: AdsetSummary[], config: IntelConfig
       reduce,
       pause,
       refresh,
+      bleeders,
       maintain: {
         count: maintain.length,
         top_by_spend: maintain, // All maintain adsets — bug fix from shell's [:5]
@@ -190,6 +208,7 @@ export function computeBudgetActions(adsets: AdsetSummary[], config: IntelConfig
         reduce: reduce.length,
         pause: pause.length,
         refresh: refresh.length,
+        bleeders: bleeders.length,
         maintain: maintain.length,
       },
     };

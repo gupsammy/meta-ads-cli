@@ -215,7 +215,7 @@ export interface BudgetActionEntry {
   adset_name: string | null;
   campaign_name: string | null;
   objective: string;
-  action: 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain';
+  action: 'scale' | 'reduce' | 'pause' | 'refresh' | 'maintain' | 'bleeder';
   reason: string;
   spend: number;
   frequency: number;
@@ -228,6 +228,7 @@ export interface BudgetActionGroup {
   reduce: BudgetActionEntry[];
   pause: BudgetActionEntry[];
   refresh: BudgetActionEntry[];
+  bleeders: BudgetActionEntry[];
   maintain: { count: number; top_by_spend: BudgetActionEntry[] };
   summary: {
     total_evaluated: number;
@@ -235,6 +236,7 @@ export interface BudgetActionGroup {
     reduce: number;
     pause: number;
     refresh: number;
+    bleeders: number;
     maintain: number;
   };
 }
@@ -305,6 +307,9 @@ export type TrendsData =
       recently_inactive: TrendInactive[];
     };
 
+/** Diagnostic status classification for an ad's ranking fields */
+export type DiagnosticStatus = 'available' | 'insufficient_data' | 'ambiguous' | 'placement_ineligible' | 'partial';
+
 /** Formatted ad entry in creative-analysis winners/losers */
 export interface CreativeAdEntry {
   ad_name: string | null;
@@ -330,6 +335,7 @@ export interface CreativeAdEntry {
   quality_ranking: string;
   engagement_rate_ranking: string;
   conversion_rate_ranking: string;
+  diagnostic_status: DiagnosticStatus;
 }
 
 /** Zero-conversion ad entry */
@@ -346,6 +352,7 @@ export interface CreativeZeroEntry {
   quality_ranking: string;
   engagement_rate_ranking: string;
   conversion_rate_ranking: string;
+  diagnostic_status: DiagnosticStatus;
 }
 
 /** Per-objective creative analysis group */
@@ -355,16 +362,36 @@ export interface CreativeObjectiveGroup {
     with_conversions: number;
     zero_conversion_count: number;
     zero_conversion_total_spend: number;
+    winner_stats: {
+      total: number;
+      empty_body: number;
+      video: number;
+      image_only: number;
+    };
+    diagnostic_coverage: {
+      available: number;
+      total: number;
+      pct: number;
+      account_ineligible: boolean;
+    };
   };
   winners: CreativeAdEntry[];
   losers: CreativeAdEntry[];
   zero_conversion: CreativeZeroEntry[];
 }
 
+/** Cross-campaign duplicate: same ad name appears as winner in one context and loser in another */
+export interface CrossCampaignDuplicate {
+  ad_name: string;
+  winner_in: { campaign: string; objective: string; metric_value: number };
+  loser_in: { campaign: string; objective: string; metric_value: number };
+}
+
 /** creative-analysis.json — per-objective winners/losers/zero-conversion */
 export interface CreativeAnalysis {
   objectives_present: string[];
-  [key: string]: CreativeObjectiveGroup | string[];
+  cross_campaign_names: CrossCampaignDuplicate[];
+  [key: string]: CreativeObjectiveGroup | string[] | CrossCampaignDuplicate[];
 }
 
 /** creative-media.json — flat array entry with ad_id + rank + URLs */
@@ -397,6 +424,143 @@ export interface RecommendationEntry {
 export interface RecommendationsData {
   opportunity_score: number;
   data: RecommendationEntry[];
+}
+
+// ─── Report types (client-ready summary) ────────────────────────
+
+export interface KpiSnapshot {
+  total_spend: number;
+  total_impressions: number;
+  total_reach: number;
+  primary_objective: string;
+  primary_kpis: Record<string, number | null>;
+}
+
+export interface BudgetSummary {
+  total_evaluated: number;
+  scale: number;
+  reduce: number;
+  pause: number;
+  refresh: number;
+  bleeders: number;
+  maintain: number;
+}
+
+export interface BleederSummary {
+  count: number;
+  total_spend: number;
+  entries: Array<{ adset_name: string | null; objective: string; spend: number; reason: string }>;
+}
+
+export interface FunnelSummary {
+  objectives_present: string[];
+  bottlenecks: Array<{ objective: string; stage: string; label: string; rate: number }>;
+}
+
+export interface TrendAlert {
+  campaign_name: string | null;
+  objective: string;
+  flags: string[];
+}
+
+export interface CreativeHighlights {
+  objectives_present: string[];
+  top_winner: { ad_name: string | null; objective: string; metric_name: string; metric_value: number } | null;
+  total_zero_conversion: number;
+  zero_conversion_spend: number;
+}
+
+export interface CrossRunDelta {
+  prior_date: string;
+  prior_date_preset: string;
+  kpi_deltas: Record<string, Record<string, { prior: number | null; current: number | null; delta_pct: number | null }>>;
+  fatigue_delta: {
+    prior: { rotate: number; watch: number; healthy: number };
+    current: { rotate: number; watch: number; healthy: number };
+  } | null;
+  budget_delta: {
+    prior: BudgetSummary;
+    current: BudgetSummary;
+  } | null;
+}
+
+export interface ReportSection {
+  kpi_snapshot: KpiSnapshot;
+  budget_summary: BudgetSummary;
+  bleeders: BleederSummary;
+  funnel_health: FunnelSummary;
+  trend_alerts: TrendAlert[];
+  creative_highlights: CreativeHighlights;
+  fatigue_by_campaign: Record<string, { rotate: number; watch: number; healthy: number }>;
+  creative_winner_stats: Record<string, { total: number; empty_body: number; video: number; image_only: number }>;
+  cross_run_delta: CrossRunDelta | null;
+  action_items: string[];
+}
+
+export interface Report {
+  generated_at: string;
+  account_name: string;
+  currency: string;
+  date_range: { start: string; stop: string } | null;
+  sections: ReportSection;
+}
+
+/** Structured data persisted to ~/.meta-ads-intel/reports/data-*.json for cross-run comparison */
+export interface DataReport {
+  date: string;
+  date_preset: string;
+  primary_objective: string;
+  total_spend: number;
+  primary_kpis: Record<string, Record<string, number | null>>;
+  opportunity_score: number | null;
+  recommendations_count: number;
+  budget_actions_summary: BudgetSummary;
+  fatigue_summary: { rotate: number; watch: number; healthy: number } | null;
+  creative_summary: {
+    winners_count: number;
+    losers_count: number;
+    zero_conv_count: number;
+    zero_conv_spend: number;
+  };
+}
+
+// ─── Fatigue types (daily ad-level analysis) ────────────────────────
+
+export interface DailyAdMetric extends DerivedMetrics {
+  ad_id: string | null;
+  ad_name: string | null;
+  campaign_name: string | null;
+  objective: string;
+  date: string;
+}
+
+export interface FatigueEntry {
+  ad_id: string;
+  ad_name: string | null;
+  campaign_name: string | null;
+  objective: string;
+  signals: string[];
+  recommendation: string;
+  peak_ctr: number;
+  latest_ctr: number;
+  ctr_decline_pct: number;
+  latest_frequency: number;
+  latest_cpc: number;
+  spend: number;
+  days_tracked: number;
+}
+
+export interface FatigueData {
+  objectives_present: string[];
+  summary: {
+    total_ads: number;
+    rotate: number;
+    watch: number;
+    healthy: number;
+    by_campaign: Record<string, { rotate: number; watch: number; healthy: number }>;
+  };
+  rotate: FatigueEntry[];
+  watch: FatigueEntry[];
 }
 
 // ─── Pull types (raw API response shapes) ─────────────────────────

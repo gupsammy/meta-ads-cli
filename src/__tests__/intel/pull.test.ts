@@ -349,9 +349,9 @@ describe('pull', () => {
 
       expect(fs.existsSync(path.join(result.runDir, '_recent'))).toBe(false);
 
-      // Should have 3 insights calls (campaign/adset/ad) + 1 campaigns meta, no 4th insights call
+      // Should have 4 insights calls (campaign/adset/ad/ad-daily) + 1 campaigns meta, no recent call
       const insightsCalls = mockPaginateAll.mock.calls.filter(c => c[0].includes('/insights'));
-      expect(insightsCalls).toHaveLength(3);
+      expect(insightsCalls).toHaveLength(4);
     });
 
     it('creates recent window when datePreset is last_14d', async () => {
@@ -366,9 +366,9 @@ describe('pull', () => {
       // _recent_raw should be cleaned up
       expect(fs.existsSync(path.join(result.runDir, '_recent_raw'))).toBe(false);
 
-      // Should have 4 insights calls: 3 period + 1 recent
+      // Should have 5 insights calls: 4 period (campaign/adset/ad/ad-daily) + 1 recent
       const insightsCalls = mockPaginateAll.mock.calls.filter(c => c[0].includes('/insights'));
-      expect(insightsCalls).toHaveLength(4);
+      expect(insightsCalls).toHaveLength(5);
     });
   });
 

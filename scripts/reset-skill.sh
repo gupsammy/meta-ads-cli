@@ -1,30 +1,28 @@
 #!/bin/bash
 set -e
 
-# Reset meta-ads-intel to simulate a fresh customer install.
-# Removes: CLI auth, CLI config, skill data, installed skill, global npm package.
-# Preserves: ffmpeg, Node.js, npm.
-# Reinstalls: skill files from repo into ~/.claude/skills/.
+# Reset meta-ads-intel skill installation.
 #
-# Usage: reset-skill.sh [--repo-dir <path>]
-#   --repo-dir: path to meta-ads-cli repo (default: auto-detect from script location)
+# Two modes:
+#   Full reset (default): simulate a fresh customer install.
+#     Removes CLI auth, config, skill data, installed skill, global npm package.
+#   Skill-only (--skill-only): update skill files without losing onboarding data.
+#     Preserves CLI auth, config.json, brand-context.md, data, reports.
+#     Only replaces SKILL.md and references/ from the repo.
 #
-# What gets removed:
-#   ~/.config/meta-ads-cli/     — CLI auth token + defaults (account_id)
-#   ~/.meta-ads-intel/          — config, brand context, data, reports, creatives
-#   ~/.claude/skills/meta-ads-intel/  — installed skill files
-#   meta-ads global npm package — simulates user who hasn't installed the CLI yet
-#
-# What gets reinstalled:
-#   SKILL.md, references/  — copied from repo into ~/.claude/skills/
+# Usage: reset-skill.sh [--repo-dir <path>] [--skill-only]
+#   --repo-dir:    path to meta-ads-cli repo (default: auto-detect from script location)
+#   --skill-only:  only replace skill files, keep all user/onboarding data
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="${SCRIPT_DIR}/.."
 
 # Parse args
+SKILL_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo-dir) REPO_DIR="$2"; shift 2 ;;
+    --skill-only) SKILL_ONLY=true; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -40,34 +38,41 @@ if [[ ! -f "$SKILL_SRC/SKILL.md" ]]; then
   exit 1
 fi
 
-echo "=== meta-ads-intel fresh install reset ==="
+if $SKILL_ONLY; then
+  echo "=== meta-ads-intel skill-only update ==="
+  echo "Preserving: CLI auth, config, brand context, data, reports"
+else
+  echo "=== meta-ads-intel fresh install reset ==="
+fi
 echo ""
 
-# 1. Remove CLI auth and config
-if [[ -d "$CLI_CONFIG_DIR" ]]; then
-  echo "Removing CLI config at $CLI_CONFIG_DIR (auth token, account defaults)..."
-  rm -rf "$CLI_CONFIG_DIR"
-  echo "  done"
-else
-  echo "No CLI config found at $CLI_CONFIG_DIR — already clean"
-fi
+if ! $SKILL_ONLY; then
+  # 1. Remove CLI auth and config
+  if [[ -d "$CLI_CONFIG_DIR" ]]; then
+    echo "Removing CLI config at $CLI_CONFIG_DIR (auth token, account defaults)..."
+    rm -rf "$CLI_CONFIG_DIR"
+    echo "  done"
+  else
+    echo "No CLI config found at $CLI_CONFIG_DIR — already clean"
+  fi
 
-# 2. Uninstall global meta-ads CLI
-if npm list -g meta-ads &>/dev/null; then
-  echo "Uninstalling global meta-ads npm package..."
-  npm uninstall -g meta-ads 2>/dev/null || true
-  echo "  done"
-else
-  echo "meta-ads not installed globally — already clean"
-fi
+  # 2. Uninstall global meta-ads CLI
+  if npm list -g meta-ads &>/dev/null; then
+    echo "Uninstalling global meta-ads npm package..."
+    npm uninstall -g meta-ads 2>/dev/null || true
+    echo "  done"
+  else
+    echo "meta-ads not installed globally — already clean"
+  fi
 
-# 3. Remove all skill user data
-if [[ -d "$DATA_DIR" ]]; then
-  echo "Removing $DATA_DIR (config, brand context, data, reports, creatives)..."
-  rm -rf "$DATA_DIR"
-  echo "  done"
-else
-  echo "No data dir found at $DATA_DIR — already clean"
+  # 3. Remove all skill user data
+  if [[ -d "$DATA_DIR" ]]; then
+    echo "Removing $DATA_DIR (config, brand context, data, reports, creatives)..."
+    rm -rf "$DATA_DIR"
+    echo "  done"
+  else
+    echo "No data dir found at $DATA_DIR — already clean"
+  fi
 fi
 
 # 4. Remove installed skill
@@ -87,13 +92,21 @@ cp -r "$SKILL_SRC/references" "$SKILL_DEST/"
 echo "  done"
 
 echo ""
-echo "=== Reset complete ==="
-echo "Removed:"
-echo "  - CLI auth + config ($CLI_CONFIG_DIR)"
-echo "  - meta-ads npm package"
-echo "  - Skill data ($DATA_DIR)"
-echo "  - Installed skill ($SKILL_DEST)"
-echo "Preserved: ffmpeg, Node.js, npm"
-echo "Reinstalled: skill files from repo"
-echo ""
-echo "Next: run /meta-ads-intel to start onboarding as a fresh customer"
+if $SKILL_ONLY; then
+  echo "=== Skill update complete ==="
+  echo "Replaced: SKILL.md, references/"
+  echo "Preserved: CLI auth, config.json, brand-context.md, data, reports"
+  echo ""
+  echo "Next: run /meta-ads-intel to test with updated skill"
+else
+  echo "=== Reset complete ==="
+  echo "Removed:"
+  echo "  - CLI auth + config ($CLI_CONFIG_DIR)"
+  echo "  - meta-ads npm package"
+  echo "  - Skill data ($DATA_DIR)"
+  echo "  - Installed skill ($SKILL_DEST)"
+  echo "Preserved: ffmpeg, Node.js, npm"
+  echo "Reinstalled: skill files from repo"
+  echo ""
+  echo "Next: run /meta-ads-intel to start onboarding as a fresh customer"
+fi

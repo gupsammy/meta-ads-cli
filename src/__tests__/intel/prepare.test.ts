@@ -158,6 +158,45 @@ function makeAd(overrides: Partial<Record<string, unknown>> = {}): Record<string
   };
 }
 
+/** Minimal daily ad metric row */
+function makeDailyAd(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    ad_id: 'a1',
+    ad_name: 'Ad 1',
+    campaign_name: 'Campaign 1',
+    objective: 'OUTCOME_SALES',
+    date: '2026-03-01',
+    spend: 50,
+    impressions: 5000,
+    clicks: 150,
+    cpc: 0.33,
+    ctr: 3.0,
+    cpm: 10.0,
+    frequency: 1.5,
+    reach: 3000,
+    purchases: 2,
+    revenue: 200,
+    roas: 4.0,
+    add_to_cart: 10,
+    initiate_checkout: 5,
+    view_content: 20,
+    link_clicks: 80,
+    landing_page_views: 60,
+    post_engagement: 50,
+    page_engagement: 5,
+    lead: 0,
+    app_install: 0,
+    video_view: 0,
+    cpa: 25,
+    cpe: 1,
+    cpl: null,
+    cpi: null,
+    link_click_ctr: 1.6,
+    link_click_cpc: 0.63,
+    ...overrides,
+  };
+}
+
 function writeJson(relativePath: string, data: unknown): void {
   const fullPath = path.join(tmpDir, relativePath);
   fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -185,6 +224,11 @@ describe('pipeline status', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01' }),
+      makeDailyAd({ date: '2026-03-02' }),
+      makeDailyAd({ date: '2026-03-03' }),
+    ]);
 
     const status = await prepare(tmpDir, configPath);
     expect(status.status).toBe('complete');
@@ -194,6 +238,8 @@ describe('pipeline status', () => {
     expect(status.files_produced).toContain('trends.json');
     expect(status.files_produced).toContain('creative-analysis.json');
     expect(status.files_produced).toContain('creative-media.json');
+    expect(status.files_produced).toContain('report.json');
+    expect(status.files_produced).toContain('fatigue.json');
     expect(status.files_skipped).toEqual([]);
     expect(status.warnings).toEqual([]);
   });
@@ -211,6 +257,11 @@ describe('pipeline status', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01' }),
+      makeDailyAd({ date: '2026-03-02' }),
+      makeDailyAd({ date: '2026-03-03' }),
+    ]);
 
     const status = await prepare(tmpDir, configPath);
     expect(status.files_skipped).toEqual([]);
@@ -260,6 +311,11 @@ describe('pipeline status', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01' }),
+      makeDailyAd({ date: '2026-03-02' }),
+      makeDailyAd({ date: '2026-03-03' }),
+    ]);
 
     const status = prepare(tmpDir, configPath);
 
@@ -416,7 +472,7 @@ describe('budget actions', () => {
     expect((sales.reduce as unknown[]).length).toBe(1);
   });
 
-  it('classifies as pause on zero conversions', async () => {
+  it('classifies as bleeder on zero conversions with spend above threshold', async () => {
     writeJson('_summaries/adsets-summary.json', [
       makeAdset({ purchases: 0, roas: 0, spend: 500 }),
     ]);
@@ -424,7 +480,27 @@ describe('budget actions', () => {
     await prepare(tmpDir, configPath);
     const actions = readOutput('budget-actions.json') as Record<string, unknown>;
     const sales = actions.OUTCOME_SALES as Record<string, unknown>;
-    expect((sales.pause as unknown[]).length).toBe(1);
+    expect((sales.bleeders as unknown[]).length).toBe(1);
+    expect((sales.bleeders as Record<string, unknown>[])[0].reason).toContain('bleeding');
+  });
+
+  it('classifies as pause on zero conversions when spend below bleed threshold', async () => {
+    // min_spend=1000 means neither adset passes the filter → M5 fallback includes all.
+    // Bleed threshold = min_spend = 1000. Both spend < 1000 → existing pause logic applies.
+    fs.writeFileSync(configPath, JSON.stringify(makeConfig({
+      targets: { OUTCOME_SALES: { cpa: 50, roas: 2.0 }, global: { max_frequency: 5.0, min_spend: 1000 } },
+    })));
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ adset_id: 'as1', purchases: 0, roas: 0, spend: 500 }),
+      makeAdset({ adset_id: 'as2', purchases: 0, roas: 0, spend: 800 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const actions = readOutput('budget-actions.json') as Record<string, unknown>;
+    const sales = actions.OUTCOME_SALES as Record<string, unknown>;
+    // Both spend < bleedThreshold 1000 → fall through to pause logic
+    expect((sales.pause as unknown[]).length).toBe(2);
+    expect((sales.bleeders as unknown[]).length).toBe(0);
   });
 
   it('classifies as refresh when frequency exceeds ceiling', async () => {
@@ -522,7 +598,7 @@ describe('budget actions', () => {
     expect(summary.total_evaluated).toBe(3);
     expect(summary.scale).toBe(1);
     expect(summary.reduce).toBe(1);
-    expect(summary.pause).toBe(1);
+    expect(summary.bleeders).toBe(1);
   });
 });
 
@@ -952,6 +1028,7 @@ describe('edge cases', () => {
     writeJson('_summaries/campaigns-summary.json', []);
     writeJson('_summaries/adsets-summary.json', []);
     writeJson('_summaries/ads-summary.json', []);
+    writeJson('_summaries/ads-daily-summary.json', []);
     writeJson('_raw/recommendations.json', { opportunity_score: 0, data: [] });
 
     const status = await prepare(tmpDir, configPath);
@@ -994,6 +1071,7 @@ describe('edge cases', () => {
     writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
     writeJson('_summaries/adsets-summary.json', [makeAdset()]);
     writeJson('_summaries/ads-summary.json', [makeAd()]);
+    writeJson('_summaries/ads-daily-summary.json', [makeDailyAd()]);
     writeJson('_raw/recommendations.json', { opportunity_score: 75, data: [] });
 
     await prepare(tmpDir, configPath);
@@ -1036,7 +1114,7 @@ describe('edge cases', () => {
 // ─── Budget actions: remaining objectives ─────────────────────────
 
 describe('budget actions — remaining objectives', () => {
-  it('classifies AWARENESS adset: pause on zero impressions', async () => {
+  it('classifies AWARENESS adset: bleeder on zero impressions', async () => {
     writeJson('_summaries/adsets-summary.json', [
       makeAdset({ objective: 'OUTCOME_AWARENESS', impressions: 0, spend: 100 }),
     ]);
@@ -1044,7 +1122,7 @@ describe('budget actions — remaining objectives', () => {
     await prepare(tmpDir, configPath);
     const actions = readOutput('budget-actions.json') as Record<string, unknown>;
     const awareness = actions.OUTCOME_AWARENESS as Record<string, unknown>;
-    expect((awareness.pause as unknown[]).length).toBe(1);
+    expect((awareness.bleeders as unknown[]).length).toBe(1);
   });
 
   it('classifies AWARENESS adset: scale when CPM below target', async () => {
@@ -1059,7 +1137,7 @@ describe('budget actions — remaining objectives', () => {
     expect((awareness.scale as unknown[]).length).toBe(1);
   });
 
-  it('classifies ENGAGEMENT adset: pause on zero engagement', async () => {
+  it('classifies ENGAGEMENT adset: bleeder on zero engagement', async () => {
     writeJson('_summaries/adsets-summary.json', [
       makeAdset({ objective: 'OUTCOME_ENGAGEMENT', post_engagement: 0, spend: 100 }),
     ]);
@@ -1067,7 +1145,7 @@ describe('budget actions — remaining objectives', () => {
     await prepare(tmpDir, configPath);
     const actions = readOutput('budget-actions.json') as Record<string, unknown>;
     const eng = actions.OUTCOME_ENGAGEMENT as Record<string, unknown>;
-    expect((eng.pause as unknown[]).length).toBe(1);
+    expect((eng.bleeders as unknown[]).length).toBe(1);
   });
 
   it('classifies ENGAGEMENT adset: scale when CPE below target', async () => {
@@ -1082,7 +1160,7 @@ describe('budget actions — remaining objectives', () => {
     expect((eng.scale as unknown[]).length).toBe(1);
   });
 
-  it('classifies LEADS adset: pause on zero leads, scale when CPL below target', async () => {
+  it('classifies LEADS adset: bleeder on zero leads, scale when CPL below target', async () => {
     writeJson('_summaries/adsets-summary.json', [
       makeAdset({ adset_id: 'as1', objective: 'OUTCOME_LEADS', lead: 0, spend: 100 }),
       makeAdset({ adset_id: 'as2', objective: 'OUTCOME_LEADS', lead: 10, cpl: 10, spend: 100 }),
@@ -1091,12 +1169,12 @@ describe('budget actions — remaining objectives', () => {
     await prepare(tmpDir, configPath);
     const actions = readOutput('budget-actions.json') as Record<string, unknown>;
     const leads = actions.OUTCOME_LEADS as Record<string, unknown>;
-    expect((leads.pause as unknown[]).length).toBe(1);
+    expect((leads.bleeders as unknown[]).length).toBe(1);
     // cpl=10 < 20*0.8=16 → scale
     expect((leads.scale as unknown[]).length).toBe(1);
   });
 
-  it('classifies APP_PROMOTION adset: pause on zero installs, scale when CPI below target', async () => {
+  it('classifies APP_PROMOTION adset: bleeder on zero installs, scale when CPI below target', async () => {
     writeJson('_summaries/adsets-summary.json', [
       makeAdset({ adset_id: 'as1', objective: 'OUTCOME_APP_PROMOTION', app_install: 0, spend: 100 }),
       makeAdset({ adset_id: 'as2', objective: 'OUTCOME_APP_PROMOTION', app_install: 50, cpi: 1.5, spend: 75 }),
@@ -1105,7 +1183,7 @@ describe('budget actions — remaining objectives', () => {
     await prepare(tmpDir, configPath);
     const actions = readOutput('budget-actions.json') as Record<string, unknown>;
     const app = actions.OUTCOME_APP_PROMOTION as Record<string, unknown>;
-    expect((app.pause as unknown[]).length).toBe(1);
+    expect((app.bleeders as unknown[]).length).toBe(1);
     // cpi=1.5 < 3*0.8=2.4 → scale
     expect((app.scale as unknown[]).length).toBe(1);
   });
@@ -1267,5 +1345,618 @@ describe('creative ranking — remaining objectives', () => {
     const media = readOutput('creative-media.json') as Record<string, unknown>[];
     expect(media[0].primary_metric_name).toBe('roas');
     expect(media[0].primary_metric_value).toBe(3.57); // round2(3.567)
+  });
+});
+
+// ─── Report ─────────────────────────────────────────────────────────
+
+describe('report', () => {
+  it('produces report.json with all sections', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    expect(report.account_name).toBe('Test Account');
+    expect(report.currency).toBe('USD');
+    expect(report.generated_at).toBeDefined();
+    expect(report.date_range).toEqual({ start: '2026-03-01', stop: '2026-03-14' });
+
+    const sections = report.sections as Record<string, unknown>;
+    expect(sections.kpi_snapshot).toBeDefined();
+    expect(sections.budget_summary).toBeDefined();
+    expect(sections.bleeders).toBeDefined();
+    expect(sections.funnel_health).toBeDefined();
+    expect(sections.trend_alerts).toBeDefined();
+    expect(sections.creative_highlights).toBeDefined();
+    expect(sections.action_items).toBeDefined();
+  });
+
+  it('report kpi_snapshot reflects account health', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ spend: 1000, impressions: 50000, reach: 33000, purchases: 20, revenue: 3000 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const kpi = sections.kpi_snapshot as Record<string, unknown>;
+    expect(kpi.total_spend).toBe(1000);
+    expect(kpi.primary_objective).toBe('OUTCOME_SALES');
+  });
+
+  it('report action_items includes bleeders', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ purchases: 0, roas: 0, spend: 500 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const items = sections.action_items as string[];
+    expect(items.some((i: string) => i.includes('bleeding'))).toBe(true);
+  });
+
+  it('report action_items includes scale opportunities', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [
+      makeAdset({ roas: 3.0, cpa: 30, purchases: 10, spend: 300 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const items = sections.action_items as string[];
+    expect(items.some((i: string) => i.includes('scale'))).toBe(true);
+  });
+
+  it('report is included in pipeline-status files_produced', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
+
+    const status = await prepare(tmpDir, configPath);
+    expect(status.files_produced).toContain('report.json');
+  });
+
+  it('handles missing input files gracefully', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const budget = sections.budget_summary as Record<string, unknown>;
+    expect(budget.total_evaluated).toBe(0);
+  });
+});
+
+// ─── Fatigue detection ──────────────────────────────────────────────
+
+describe('fatigue detection', () => {
+  it('classifies ad as rotate when CTR declines 3+ days with high frequency', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    // 5 days of declining CTR + high frequency on latest day
+    const daily = [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, cpc: 0.3, frequency: 2.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 4.5, cpc: 0.35, frequency: 2.5 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.8, cpc: 0.4, frequency: 3.0 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 3.0, cpc: 0.45, frequency: 3.5 }),
+      makeDailyAd({ date: '2026-03-05', ctr: 2.5, cpc: 0.5, frequency: 4.0 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    expect(fatigue.rotate).toBeDefined();
+    const rotate = fatigue.rotate as Record<string, unknown>[];
+    expect(rotate.length).toBe(1);
+    expect(rotate[0].ad_id).toBe('a1');
+    expect(rotate[0].signals).toContain('ctr_declining');
+    expect(rotate[0].signals).toContain('frequency_high');
+    expect(rotate[0].recommendation).toContain('Rotate');
+  });
+
+  it('classifies ad as watch when CTR declines but frequency low', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    const daily = [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, cpc: 0.3, frequency: 1.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 4.5, cpc: 0.32, frequency: 1.2 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.8, cpc: 0.34, frequency: 1.4 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 3.0, cpc: 0.36, frequency: 1.6 }),
+      makeDailyAd({ date: '2026-03-05', ctr: 2.5, cpc: 0.38, frequency: 1.8 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    const watch = fatigue.watch as Record<string, unknown>[];
+    expect(watch.length).toBe(1);
+    expect(watch[0].recommendation).toContain('Monitor');
+  });
+
+  it('classifies ad as healthy when no signals', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    // Stable CTR, low frequency
+    const daily = [
+      makeDailyAd({ date: '2026-03-01', ctr: 3.0, cpc: 0.5, frequency: 1.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 3.1, cpc: 0.49, frequency: 1.1 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.0, cpc: 0.5, frequency: 1.2 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 3.2, cpc: 0.48, frequency: 1.3 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    const summary = fatigue.summary as Record<string, unknown>;
+    expect(summary.healthy).toBe(1);
+    expect(summary.rotate).toBe(0);
+    expect(summary.watch).toBe(0);
+  });
+
+  it('skips ads with fewer than 3 days of data', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    const daily = [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, frequency: 4.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 2.0, frequency: 5.0 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    const summary = fatigue.summary as Record<string, unknown>;
+    expect(summary.total_ads).toBe(1);
+    expect(summary.healthy).toBe(1);
+  });
+
+  it('fatigue.json included in pipeline-status files_produced', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01' }),
+      makeDailyAd({ date: '2026-03-02' }),
+      makeDailyAd({ date: '2026-03-03' }),
+    ]);
+
+    const status = await prepare(tmpDir, configPath);
+    expect(status.files_produced).toContain('fatigue.json');
+  });
+
+  it('handles multiple ads independently', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    const daily = [
+      // Ad 1: declining CTR + high freq → rotate
+      makeDailyAd({ ad_id: 'a1', date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ ad_id: 'a1', date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ ad_id: 'a1', date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ ad_id: 'a1', date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+      // Ad 2: stable → healthy
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', date: '2026-03-01', ctr: 3.0, frequency: 1.0 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', date: '2026-03-02', ctr: 3.1, frequency: 1.1 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', date: '2026-03-03', ctr: 3.0, frequency: 1.2 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', date: '2026-03-04', ctr: 3.2, frequency: 1.3 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    const summary = fatigue.summary as Record<string, unknown>;
+    expect(summary.total_ads).toBe(2);
+    expect(summary.rotate).toBe(1);
+    expect(summary.healthy).toBe(1);
+  });
+
+  it('includes by_campaign counts in fatigue summary', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    const daily = [
+      // Ad 1 in Campaign 1: declining CTR + high freq → rotate
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ ad_id: 'a1', campaign_name: 'Campaign 1', date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+      // Ad 2 in Campaign 2: stable → healthy
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-01', ctr: 3.0, frequency: 1.0 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-02', ctr: 3.1, frequency: 1.1 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-03', ctr: 3.0, frequency: 1.2 }),
+      makeDailyAd({ ad_id: 'a2', ad_name: 'Ad 2', campaign_name: 'Campaign 2', date: '2026-03-04', ctr: 3.2, frequency: 1.3 }),
+    ];
+    writeJson('_summaries/ads-daily-summary.json', daily);
+
+    await prepare(tmpDir, configPath);
+    const fatigue = readOutput('fatigue.json') as Record<string, unknown>;
+    const summary = fatigue.summary as Record<string, unknown>;
+    const byCampaign = summary.by_campaign as Record<string, Record<string, number>>;
+    expect(byCampaign['Campaign 1'].rotate).toBe(1);
+    expect(byCampaign['Campaign 1'].healthy).toBe(0);
+    expect(byCampaign['Campaign 2'].rotate).toBe(0);
+    expect(byCampaign['Campaign 2'].healthy).toBe(1);
+  });
+});
+
+// ─── Pre-computed creative stats ──────────────────────────────────
+
+describe('creative winner_stats', () => {
+  it('counts empty body and video/image in winner_stats', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 10, roas: 5.0, creative_body: '', video_view: 100 }),
+      makeAd({ ad_id: 'a2', purchases: 8, roas: 4.0, creative_body: 'Buy now!', video_view: 0 }),
+      makeAd({ ad_id: 'a3', purchases: 6, roas: 3.0, creative_body: '', video_view: 0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const overview = sales.overview as Record<string, unknown>;
+    const stats = overview.winner_stats as Record<string, number>;
+    expect(stats.empty_body).toBe(1);
+    expect(stats.video).toBe(1);
+    expect(stats.image_only).toBe(0);
+  });
+});
+
+describe('cross_campaign_names detection', () => {
+  it('detects same ad name as winner in one campaign and loser in another', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      // "Shared Ad" is a winner in Campaign A
+      makeAd({ ad_id: 'a1', ad_name: 'Shared Ad', campaign_name: 'Campaign A', purchases: 10, roas: 5.0, spend: 500 }),
+      // "Shared Ad" is a loser in Campaign B (lower roas, same objective)
+      makeAd({ ad_id: 'a2', ad_name: 'Shared Ad', campaign_name: 'Campaign B', purchases: 2, roas: 0.5, spend: 400 }),
+      // Other ads to ensure ranking works
+      makeAd({ ad_id: 'a3', ad_name: 'Other Ad', campaign_name: 'Campaign A', purchases: 3, roas: 1.0, spend: 300 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const crossCampaign = analysis.cross_campaign_names as Array<Record<string, unknown>>;
+    expect(crossCampaign.length).toBe(1);
+    expect(crossCampaign[0].ad_name).toBe('Shared Ad');
+    expect((crossCampaign[0].winner_in as Record<string, unknown>).campaign).toBe('Campaign A');
+    expect((crossCampaign[0].loser_in as Record<string, unknown>).campaign).toBe('Campaign B');
+  });
+
+  it('returns empty array when no cross-campaign duplicates', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 10, roas: 5.0 }),
+      makeAd({ ad_id: 'a2', ad_name: 'Ad 2', purchases: 3, roas: 1.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const crossCampaign = analysis.cross_campaign_names as unknown[];
+    expect(crossCampaign).toEqual([]);
+  });
+});
+
+// ─── spend_pct per objective ──────────────────────────────────────
+
+describe('spend_pct per objective', () => {
+  it('computes spend percentage for each objective', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ objective: 'OUTCOME_SALES', spend: 700 }),
+      makeCampaign({ objective: 'OUTCOME_TRAFFIC', spend: 300 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const health = readOutput('account-health.json') as Record<string, unknown>;
+    const sales = health.OUTCOME_SALES as Record<string, unknown>;
+    const traffic = health.OUTCOME_TRAFFIC as Record<string, unknown>;
+    expect(sales.spend_pct).toBe(70);
+    expect(traffic.spend_pct).toBe(30);
+  });
+
+  it('returns 0 when total spend is 0', async () => {
+    writeJson('_summaries/campaigns-summary.json', [
+      makeCampaign({ objective: 'OUTCOME_SALES', spend: 0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const health = readOutput('account-health.json') as Record<string, unknown>;
+    const sales = health.OUTCOME_SALES as Record<string, unknown>;
+    expect(sales.spend_pct).toBe(0);
+  });
+});
+
+// ─── Diagnostic status classification ─────────────────────────────
+
+describe('diagnostic status', () => {
+  it('classifies ad as available when all rankings present', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'AVERAGE', conversion_rate_ranking: 'BELOW_AVERAGE_35' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('available');
+  });
+
+  it('classifies ad as insufficient_data when low impressions and unknown rankings', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 300,
+        quality_ranking: 'UNKNOWN', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('insufficient_data');
+  });
+
+  it('classifies ad as ambiguous when 500-999 impressions and unknown rankings', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 750,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('ambiguous');
+  });
+
+  it('classifies ad as placement_ineligible when high impressions and unknown rankings', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'UNKNOWN', engagement_rate_ranking: 'UNKNOWN', conversion_rate_ranking: 'UNKNOWN' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('placement_ineligible');
+  });
+
+  it('classifies ad as partial when some rankings present and others unknown', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'UNKNOWN', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const winner = (sales.winners as Record<string, unknown>[])[0];
+    expect(winner.diagnostic_status).toBe('partial');
+  });
+
+  it('includes diagnostic_status on zero_conversion ads', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0 }),
+      makeAd({ ad_id: 'a2', purchases: 0, roas: 0, spend: 200, impressions: 100,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const zeroAd = (sales.zero_conversion as Record<string, unknown>[])[0];
+    expect(zeroAd.diagnostic_status).toBe('insufficient_data');
+  });
+});
+
+// ─── Diagnostic coverage ──────────────────────────────────────────
+
+describe('diagnostic coverage', () => {
+  it('computes coverage percentage in overview', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 10, roas: 5.0, impressions: 5000,
+        quality_ranking: 'ABOVE_AVERAGE_20', engagement_rate_ranking: 'AVERAGE', conversion_rate_ranking: 'AVERAGE' }),
+      makeAd({ ad_id: 'a2', purchases: 3, roas: 1.0, impressions: 300,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const overview = sales.overview as Record<string, unknown>;
+    const coverage = overview.diagnostic_coverage as Record<string, unknown>;
+    expect(coverage.available).toBe(1); // only a1 is 'available'
+    expect(coverage.total).toBe(2);
+    expect(coverage.pct).toBe(50);
+    expect(coverage.account_ineligible).toBe(false);
+  });
+
+  it('detects account_ineligible when all ads have unknown diagnostics', async () => {
+    writeJson('_summaries/ads-summary.json', [
+      makeAd({ ad_id: 'a1', purchases: 5, roas: 3.0, impressions: 5000,
+        quality_ranking: 'UNKNOWN', engagement_rate_ranking: 'UNKNOWN', conversion_rate_ranking: 'UNKNOWN' }),
+      makeAd({ ad_id: 'a2', purchases: 3, roas: 1.0, impressions: 2000,
+        quality_ranking: '', engagement_rate_ranking: '', conversion_rate_ranking: '' }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const analysis = readOutput('creative-analysis.json') as Record<string, unknown>;
+    const sales = analysis.OUTCOME_SALES as Record<string, unknown>;
+    const overview = sales.overview as Record<string, unknown>;
+    const coverage = overview.diagnostic_coverage as Record<string, unknown>;
+    expect(coverage.available).toBe(0);
+    expect(coverage.account_ineligible).toBe(true);
+  });
+});
+
+// ─── Data report generation ──────────────────────────────────────
+
+describe('data-report.json', () => {
+  it('generates data-report.json with correct schema', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign({ spend: 1000, purchases: 20, revenue: 3000 })]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+    writeJson('_summaries/ads-summary.json', [makeAd()]);
+
+    await prepare(tmpDir, configPath);
+    const dataReport = readOutput('data-report.json') as Record<string, unknown>;
+    expect(dataReport.date_preset).toBe('last_14d');
+    expect(dataReport.primary_objective).toBe('OUTCOME_SALES');
+    expect(dataReport.total_spend).toBe(1000);
+    expect(dataReport.primary_kpis).toBeDefined();
+
+    const kpis = dataReport.primary_kpis as Record<string, Record<string, unknown>>;
+    expect(kpis.OUTCOME_SALES).toBeDefined();
+    expect(kpis.OUTCOME_SALES.cpa).toBeDefined();
+    expect(kpis.OUTCOME_SALES.roas).toBeDefined();
+    // KPI fields should NOT include non-KPI fields
+    expect(kpis.OUTCOME_SALES.campaign_count).toBeUndefined();
+    expect(kpis.OUTCOME_SALES.spend).toBeUndefined();
+    expect(kpis.OUTCOME_SALES.impressions).toBeUndefined();
+
+    expect(dataReport.budget_actions_summary).toBeDefined();
+    expect(dataReport.creative_summary).toBeDefined();
+    const creative = dataReport.creative_summary as Record<string, unknown>;
+    expect(creative.winners_count).toBeDefined();
+    expect(creative.losers_count).toBeDefined();
+    expect(creative.zero_conv_count).toBeDefined();
+  });
+
+  it('is included in pipeline-status files_produced', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    const status = await prepare(tmpDir, configPath);
+    expect(status.files_produced).toContain('data-report.json');
+  });
+
+  it('writes data-report to reports directory', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    await prepare(tmpDir, configPath);
+    // Reports dir is derived from configPath parent
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    const files = fs.existsSync(reportsDir) ? fs.readdirSync(reportsDir).filter((f) => f.startsWith('data-')) : [];
+    expect(files.length).toBe(1);
+  });
+
+  it('includes fatigue_summary when fatigue data is available', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const dataReport = readOutput('data-report.json') as Record<string, unknown>;
+    expect(dataReport.fatigue_summary).toBeDefined();
+    const fatigue = dataReport.fatigue_summary as Record<string, number>;
+    expect(fatigue.rotate).toBe(1);
+  });
+});
+
+// ─── Cross-run delta ─────────────────────────────────────────────
+
+describe('cross-run delta', () => {
+  it('report includes cross_run_delta when prior data exists', async () => {
+    // Write prior data-report to reports dir
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const priorReport = {
+      date: '2026-03-20',
+      date_preset: 'last_14d',
+      primary_objective: 'OUTCOME_SALES',
+      total_spend: 800,
+      primary_kpis: { OUTCOME_SALES: { cpa: 40, roas: 2.5, purchases: 16, revenue: 2000 } },
+      opportunity_score: 70,
+      recommendations_count: 3,
+      budget_actions_summary: { total_evaluated: 2, scale: 1, reduce: 0, pause: 0, refresh: 0, bleeders: 1, maintain: 0 },
+      fatigue_summary: { rotate: 1, watch: 2, healthy: 5 },
+      creative_summary: { winners_count: 3, losers_count: 2, zero_conv_count: 1, zero_conv_spend: 100 },
+    };
+    fs.writeFileSync(path.join(reportsDir, 'data-2026-03-20_1000.json'), JSON.stringify(priorReport));
+
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign({ spend: 1000, purchases: 20, revenue: 3000 })]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset()]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const delta = sections.cross_run_delta as Record<string, unknown>;
+    expect(delta).not.toBeNull();
+    expect(delta.prior_date).toBe('2026-03-20');
+    expect(delta.prior_date_preset).toBe('last_14d');
+
+    const kpiDeltas = delta.kpi_deltas as Record<string, Record<string, Record<string, unknown>>>;
+    expect(kpiDeltas.OUTCOME_SALES).toBeDefined();
+    expect(kpiDeltas.OUTCOME_SALES.cpa.prior).toBe(40);
+    expect(kpiDeltas.OUTCOME_SALES.cpa.current).toBe(50); // 1000/20 = 50
+    expect(kpiDeltas.OUTCOME_SALES.cpa.delta_pct).toBe(25); // (50-40)/40*100 = 25
+  });
+
+  it('report has null cross_run_delta when no prior data', async () => {
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    expect(sections.cross_run_delta).toBeNull();
+  });
+
+  it('includes fatigue_delta when both current and prior have fatigue data', async () => {
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const priorReport = {
+      date: '2026-03-20',
+      date_preset: 'last_14d',
+      primary_objective: 'OUTCOME_SALES',
+      total_spend: 800,
+      primary_kpis: { OUTCOME_SALES: { cpa: 40, roas: 2.5 } },
+      opportunity_score: null,
+      recommendations_count: 0,
+      budget_actions_summary: { total_evaluated: 0, scale: 0, reduce: 0, pause: 0, refresh: 0, bleeders: 0, maintain: 0 },
+      fatigue_summary: { rotate: 1, watch: 2, healthy: 5 },
+      creative_summary: { winners_count: 0, losers_count: 0, zero_conv_count: 0, zero_conv_spend: 0 },
+    };
+    fs.writeFileSync(path.join(reportsDir, 'data-2026-03-20_1000.json'), JSON.stringify(priorReport));
+
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/ads-daily-summary.json', [
+      makeDailyAd({ date: '2026-03-01', ctr: 5.0, frequency: 2.0 }),
+      makeDailyAd({ date: '2026-03-02', ctr: 4.0, frequency: 2.5 }),
+      makeDailyAd({ date: '2026-03-03', ctr: 3.0, frequency: 3.0 }),
+      makeDailyAd({ date: '2026-03-04', ctr: 2.0, frequency: 4.0 }),
+    ]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const delta = sections.cross_run_delta as Record<string, unknown>;
+    expect(delta).not.toBeNull();
+    const fatigueDelta = delta.fatigue_delta as Record<string, Record<string, number>>;
+    expect(fatigueDelta).not.toBeNull();
+    expect(fatigueDelta.prior.rotate).toBe(1);
+    expect(fatigueDelta.current.rotate).toBe(1);
+  });
+
+  it('includes budget_delta comparing prior and current', async () => {
+    const reportsDir = path.join(path.dirname(configPath), 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    const priorReport = {
+      date: '2026-03-20',
+      date_preset: 'last_14d',
+      primary_objective: 'OUTCOME_SALES',
+      total_spend: 800,
+      primary_kpis: { OUTCOME_SALES: { cpa: 40 } },
+      opportunity_score: null,
+      recommendations_count: 0,
+      budget_actions_summary: { total_evaluated: 5, scale: 2, reduce: 1, pause: 0, refresh: 1, bleeders: 1, maintain: 0 },
+      fatigue_summary: null,
+      creative_summary: { winners_count: 0, losers_count: 0, zero_conv_count: 0, zero_conv_spend: 0 },
+    };
+    fs.writeFileSync(path.join(reportsDir, 'data-2026-03-20_1000.json'), JSON.stringify(priorReport));
+
+    writeJson('_summaries/campaigns-summary.json', [makeCampaign()]);
+    writeJson('_summaries/adsets-summary.json', [makeAdset({ purchases: 0, roas: 0, spend: 500 })]);
+
+    await prepare(tmpDir, configPath);
+    const report = readOutput('report.json') as Record<string, unknown>;
+    const sections = report.sections as Record<string, unknown>;
+    const delta = sections.cross_run_delta as Record<string, unknown>;
+    const budgetDelta = delta.budget_delta as Record<string, Record<string, number>>;
+    expect(budgetDelta.prior.scale).toBe(2);
+    expect(budgetDelta.current.bleeders).toBe(1);
   });
 });
