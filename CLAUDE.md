@@ -94,6 +94,9 @@ Pipeline outputs (in `runDir`): `account-health.json`, `budget-actions.json`, `f
 - Intel metrics use omni-first extraction (`omni_purchase` preferred over `purchase`) with base fallback. See `metrics.ts` for the full action-type priority.
 - `insights` diagnostic ranking fields (`quality_ranking`, `engagement_rate_ranking`, `conversion_rate_ranking`) are ad-level only — Meta rejects them for campaign/adset/account queries. They live in a separate `AD_INSIGHT_FIELDS` constant.
 - Optional pipeline outputs (e.g., `recommendations.json`) must not be in `expectedFiles` — doing so causes `status: "partial"` for accounts that simply lack the required API permission.
+- Intel pipeline pre-computes deterministic derived fields (`*_vs_target`, `spend_pct`, `diagnostic_status`, `cross_run_delta`). The agent skill must read these directly, never re-derive from raw inputs — LLM computation on deterministic data is both a failure mode and a token cost.
+- Meta adset/ad-level ROAS is inflated due to within-adset conversion attribution (multiple ads claiming the same purchase). Use campaign-level ROAS as ground truth for budget decisions; lower levels are only valid for relative ranking within the same level. Require minimum spend thresholds before trusting ad-level ROAS.
+- Meta's `action_attribution_windows` parameter (`['1d_click','7d_click','1d_view']`) breaks purchases into click vs view-through components. Not currently passed in the CLI fetch, but `attrGuard` in `metrics.ts` already handles the response format.
 
 ## Output Format
 
