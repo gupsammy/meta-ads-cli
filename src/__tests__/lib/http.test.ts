@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import nock from 'nock';
-import { graphRequest, paginateAll, HttpError } from '../../lib/http.js';
+import { graphRequest, paginateAll, fetchInsightsAsync, HttpError } from '../../lib/http.js';
 
 const BASE_URL = 'https://graph.facebook.com';
 const TOKEN = 'test_access_token_123';
@@ -209,5 +209,70 @@ describe('paginateAll', () => {
     expect(result.data[0].id).toBe('1');
     expect(result.data[1].id).toBe('2');
     expect(result.has_more).toBe(false);
+  });
+});
+
+describe('fetchInsightsAsync', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  it('submits a report job, polls to completion, and returns the rows', async () => {
+    nock(BASE_URL).post('/v21.0/act_123/insights').reply(200, { report_run_id: '999' });
+    nock(BASE_URL).get('/v21.0/999').query(true).reply(200, { id: '999', async_status: 'Job Completed' });
+    nock(BASE_URL).get('/v21.0/999/insights').query(true).reply(200, {
+      data: [{ ad_id: 'a1', spend: '10' }, { ad_id: 'a2', spend: '20' }],
+      paging: { cursors: { after: 'x' } },
+    });
+
+    const result = await fetchInsightsAsync<{ ad_id: string }>(
+      '/act_123/insights',
+      TOKEN,
+      { params: { level: 'ad', time_increment: '1' } },
+      undefined,
+      { intervalMs: 0 },
+    );
+
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0].ad_id).toBe('a1');
+    expect(result.has_more).toBe(false);
+  });
+
+  it('polls repeatedly until the job leaves a running state', async () => {
+    nock(BASE_URL).post('/v21.0/act_123/insights').reply(200, { report_run_id: '777' });
+    nock(BASE_URL).get('/v21.0/777').query(true).reply(200, { id: '777', async_status: 'Job Running', async_percent_completion: 40 });
+    nock(BASE_URL).get('/v21.0/777').query(true).reply(200, { id: '777', async_status: 'Job Completed', async_percent_completion: 100 });
+    nock(BASE_URL).get('/v21.0/777/insights').query(true).reply(200, { data: [{ ad_id: 'a1' }] });
+
+    const result = await fetchInsightsAsync<{ ad_id: string }>(
+      '/act_123/insights',
+      TOKEN,
+      { params: { level: 'ad' } },
+      undefined,
+      { intervalMs: 0 },
+    );
+
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('throws when the report job fails', async () => {
+    nock(BASE_URL).post('/v21.0/act_123/insights').reply(200, { report_run_id: '500' });
+    nock(BASE_URL).get('/v21.0/500').query(true).reply(200, { id: '500', async_status: 'Job Failed' });
+
+    await expect(
+      fetchInsightsAsync('/act_123/insights', TOKEN, { params: { level: 'ad' } }, undefined, { intervalMs: 0 }),
+    ).rejects.toThrow(/Job Failed/);
+  });
+
+  it('throws when no report_run_id is returned', async () => {
+    nock(BASE_URL).post('/v21.0/act_123/insights').reply(200, {});
+
+    await expect(
+      fetchInsightsAsync('/act_123/insights', TOKEN, { params: {} }, undefined, { intervalMs: 0 }),
+    ).rejects.toThrow(/report_run_id/);
   });
 });
