@@ -7,6 +7,7 @@ import * as path from 'node:path';
 vi.mock('../../lib/http.js', () => ({
   paginateAll: vi.fn(),
   graphRequestWithRetry: vi.fn(),
+  fetchInsightsAsync: vi.fn(),
 }));
 
 // Mock auth module — resolveAccessToken returns a test token by default
@@ -15,12 +16,13 @@ vi.mock('../../auth.js', () => ({
 }));
 
 import { pull } from '../../intel/pull.js';
-import { paginateAll, graphRequestWithRetry } from '../../lib/http.js';
+import { paginateAll, graphRequestWithRetry, fetchInsightsAsync } from '../../lib/http.js';
 import { resolveAccessToken } from '../../auth.js';
 import * as summarizeModule from '../../intel/summarize.js';
 
 const mockPaginateAll = vi.mocked(paginateAll);
 const mockGraphRequest = vi.mocked(graphRequestWithRetry);
+const mockFetchAsync = vi.mocked(fetchInsightsAsync);
 const mockResolveToken = vi.mocked(resolveAccessToken);
 
 let tmpDir: string;
@@ -98,6 +100,11 @@ function setupMocks(): void {
       };
     }
     return { data: [], has_more: false };
+  });
+
+  // Ad × daily insights now route through the async report API.
+  mockFetchAsync.mockImplementation(async () => {
+    return { data: [makeInsightsRow({ date_start: '2026-03-01', date_stop: '2026-03-01' })], has_more: false };
   });
 
   mockGraphRequest.mockImplementation(async (pathArg: string) => {
@@ -178,6 +185,30 @@ describe('pull', () => {
       for (const call of mockPaginateAll.mock.calls) {
         expect(call[1]).toBe('custom-token');
       }
+      // The async ad-daily call should use it too
+      for (const call of mockFetchAsync.mock.calls) {
+        expect(call[1]).toBe('custom-token');
+      }
+    });
+
+    it('scopes both ad-level pulls to ACTIVE ads via effective_status filtering', async () => {
+      writeConfig();
+      setupMocks();
+
+      await pull({ dataDir, configPath, datePreset: 'last_7d' });
+
+      // Sync ad-level pull (level=ad) carries the effective_status filter.
+      const adCall = mockPaginateAll.mock.calls.find(
+        c => c[0].includes('/insights') && c[2]?.params?.level === 'ad',
+      );
+      expect(adCall).toBeDefined();
+      expect(adCall?.[2]?.params?.filtering).toContain('effective_status');
+      expect(adCall?.[2]?.params?.filtering).toContain('ACTIVE');
+
+      // Async ad-daily pull carries the same filter (consistent ad universe).
+      const dailyCall = mockFetchAsync.mock.calls[0];
+      expect(dailyCall?.[2]?.params?.time_increment).toBe('1');
+      expect(dailyCall?.[2]?.params?.filtering).toContain('ACTIVE');
     });
   });
 
@@ -349,9 +380,11 @@ describe('pull', () => {
 
       expect(fs.existsSync(path.join(result.runDir, '_recent'))).toBe(false);
 
-      // Should have 4 insights calls (campaign/adset/ad/ad-daily) + 1 campaigns meta, no recent call
+      // 3 sync insights calls (campaign/adset/ad); ad-daily now runs via the
+      // async report API, so it is NOT counted among the sync paginateAll calls.
       const insightsCalls = mockPaginateAll.mock.calls.filter(c => c[0].includes('/insights'));
-      expect(insightsCalls).toHaveLength(4);
+      expect(insightsCalls).toHaveLength(3);
+      expect(mockFetchAsync).toHaveBeenCalledTimes(1);
     });
 
     it('creates recent window when datePreset is last_14d', async () => {
@@ -366,9 +399,11 @@ describe('pull', () => {
       // _recent_raw should be cleaned up
       expect(fs.existsSync(path.join(result.runDir, '_recent_raw'))).toBe(false);
 
-      // Should have 5 insights calls: 4 period (campaign/adset/ad/ad-daily) + 1 recent
+      // 4 sync insights calls: 3 period (campaign/adset/ad) + 1 recent window.
+      // The period ad-daily call runs via the async report API (counted below).
       const insightsCalls = mockPaginateAll.mock.calls.filter(c => c[0].includes('/insights'));
-      expect(insightsCalls).toHaveLength(5);
+      expect(insightsCalls).toHaveLength(4);
+      expect(mockFetchAsync).toHaveBeenCalledTimes(1);
     });
   });
 

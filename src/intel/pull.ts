@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
-import { paginateAll, graphRequestWithRetry } from '../lib/http.js';
+import { paginateAll, graphRequestWithRetry, fetchInsightsAsync } from '../lib/http.js';
 import { resolveAccessToken } from '../auth.js';
 import { ConfigManager } from '../lib/config.js';
 import { summarize } from './summarize.js';
@@ -19,6 +19,22 @@ const INSIGHT_FIELDS =
 const AD_INSIGHT_FIELDS = INSIGHT_FIELDS + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking';
 
 const PULL_LIMIT = 500;
+
+// Scope the AD-LEVEL pulls to currently-delivering ads. Meta's synchronous
+// /insights edge rejects ad-level × daily over a full account with error code 1
+// ("Please reduce the amount of data you're asking for") because it enumerates
+// EVERY ad — including the long tail of archived/deleted creatives — before
+// paginating. The deck's recommendations (scale winners, cut bleeders, fatigue)
+// are about ads that are actually running, so scoping to ACTIVE both shrinks the
+// request and aligns the analysis with what's actionable. Applied to BOTH ad
+// calls so ads.json and ads-daily.json describe the same ad universe. Campaign/
+// adset pulls stay unfiltered — they're small and give full funnel context.
+// (Loosen to include PAUSED variants if you need ads that spent in the window
+// but were paused since.)
+const AD_ACTIVE_FILTERING = JSON.stringify([
+  { field: 'ad.effective_status', operator: 'IN', value: ['ACTIVE'] },
+]);
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 export interface PullOptions {
@@ -221,7 +237,13 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     console.error(`Pulling Meta Ads data (${datePreset})...`);
     console.error(`Run directory: ${runDir}`);
 
-    // ── Parallel API pull: 3 insights levels ──
+    // ── Parallel API pull: campaign/adset/ad (sync) + ad-daily (async) ──
+    // Campaign and ad-set insights are small enough for the synchronous edge.
+    // Both AD-level pulls are scoped to ACTIVE ads (AD_ACTIVE_FILTERING) to keep
+    // the request within Meta's limits and aligned with actionable creatives.
+    // The ad × DAILY pull (time_increment=1) is the heaviest query — ad × day ×
+    // ~22 fields — so even ACTIVE-only it can exceed Meta's synchronous compute
+    // ceiling; it runs through the ASYNC report API, which has no such ceiling.
     console.error(`  Pulling period data (${datePreset})...`);
     const insightsParams = {
       fields: INSIGHT_FIELDS,
@@ -244,13 +266,13 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
       paginateAll<Record<string, unknown>>(
         `/${accountId}/insights`,
         token,
-        { params: { ...insightsParams, fields: AD_INSIGHT_FIELDS, level: 'ad' } },
+        { params: { ...insightsParams, fields: AD_INSIGHT_FIELDS, level: 'ad', filtering: AD_ACTIVE_FILTERING } },
         PULL_LIMIT,
       ),
-      paginateAll<Record<string, unknown>>(
+      fetchInsightsAsync<Record<string, unknown>>(
         `/${accountId}/insights`,
         token,
-        { params: { fields: AD_INSIGHT_FIELDS, date_preset: datePreset === 'last_14d' || datePreset === 'last_30d' ? datePreset : 'last_7d', level: 'ad', time_increment: '1' } },
+        { params: { fields: AD_INSIGHT_FIELDS, date_preset: datePreset === 'last_14d' || datePreset === 'last_30d' ? datePreset : 'last_7d', level: 'ad', time_increment: '1', filtering: AD_ACTIVE_FILTERING } },
         PULL_LIMIT,
       ),
     ]);
