@@ -252,9 +252,13 @@ export async function fetchInsightsAsync<T>(
   const maxWaitMs = pollOptions.maxWaitMs ?? 8 * 60 * 1000;
 
   // 1. Submit the report job. The query params (level/fields/time_increment/
-  //    date_preset/filtering) ride as the POST body — graphRequest form-encodes
-  //    them — so the async request is shape-for-shape identical to the sync one.
-  const submit = await graphRequest<AsyncReportSubmit>(path, accessToken, {
+  //    date_preset/filtering) ride as the POST body — form-encoded by graphRequest
+  //    under the retry wrapper — so the async request is shape-for-shape identical
+  //    to the sync one. Go through graphRequestWithRetry (not bare graphRequest) so
+  //    a transient 429/5xx on submit is retried like the poll (step 2) and page
+  //    (step 3) calls; queuing a report job is read-only, so a retried submit only
+  //    risks a harmless orphan job, never a double-write.
+  const submit = await graphRequestWithRetry<AsyncReportSubmit>(path, accessToken, {
     method: 'POST',
     body: { ...(options.params ?? {}) },
   });
