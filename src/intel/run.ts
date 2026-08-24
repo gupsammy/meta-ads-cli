@@ -30,7 +30,10 @@ export function _resetFfmpegCache(): void {
  * Full analysis pipeline: pull data → analyze creatives (if ffmpeg available).
  * Port of run-analysis.sh.
  */
-export async function run(options?: PullOptions): Promise<RunResult> {
+/** run() options: the pull options plus creative-extraction flags. */
+export type RunOptions = PullOptions & { keepVideo?: boolean };
+
+export async function run(options?: RunOptions): Promise<RunResult> {
   const pullResult = await pull(options);
 
   // Phase 2: Visual creative analysis (if ffmpeg available)
@@ -65,6 +68,7 @@ export async function run(options?: PullOptions): Promise<RunResult> {
     inputFile: mediaFile,
     dataDir: options?.dataDir,
     accessToken: options?.accessToken,
+    keepVideo: options?.keepVideo,
   });
 
   return { ...pullResult, creatives };

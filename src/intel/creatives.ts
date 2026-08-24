@@ -134,6 +134,7 @@ async function processVideoAd(
   token: string,
   thumbnailUrl: string | undefined,
   warnings: string[],
+  keepVideo: boolean,
 ): Promise<void> {
   // Fetch video details (source URL + duration)
   let videoJson: VideoApiResponse | undefined;
@@ -182,7 +183,10 @@ async function processVideoAd(
       '-i', rawPath, '-vf', 'scale=480:-1', '-b:v', '300k',
       '-an', '-t', '60', '-y', '-loglevel', 'error', videoPath,
     ], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 120_000 });
-    try { fs.unlinkSync(rawPath); } catch { /* ok */ }
+    // Keep the raw original when retaining video — the _video.mp4 transcode is
+    // audio-stripped (-an) and truncated (-t 60), so it's unusable for native
+    // audio/transcript analysis. Retain raw and hand it back at the tail.
+    if (!keepVideo) { try { fs.unlinkSync(rawPath); } catch { /* ok */ } }
   } catch {
     // Transcode failed — use raw file
     warnings.push(`ffmpeg transcode failed for ${path.basename(adDir)}, using raw`);
@@ -219,6 +223,23 @@ async function processVideoAd(
       path.join(adDir, 'frame_last.png'),
     ], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
   } catch { /* best-effort */ }
+
+  if (keepVideo) {
+    // Retain a full-fidelity, audio-bearing copy for downstream analysis.
+    // Prefer the raw original; fall back to _video.mp4 only when raw is already
+    // gone (the transcode-failure branch renamed raw → videoPath). buildManifest
+    // detects the resulting video.mp4 and records its path.
+    const keptPath = path.join(adDir, 'video.mp4');
+    try {
+      if (fs.existsSync(rawPath)) {
+        fs.renameSync(rawPath, keptPath);
+        try { fs.unlinkSync(videoPath); } catch { /* ok */ }
+      } else if (fs.existsSync(videoPath)) {
+        fs.renameSync(videoPath, keptPath);
+      }
+    } catch { /* best-effort retention — never abort the pipeline */ }
+    return;
+  }
 
   // Clean up video files
   try { fs.unlinkSync(videoPath); } catch { /* ok */ }
@@ -282,6 +303,9 @@ function buildManifest(
       .sort();
     totalFrames += frames.length;
 
+    // Retained source video (present only when analysis ran with keepVideo)
+    const hasVideo = fs.existsSync(path.join(adDir, 'video.mp4'));
+
     // Shell used explicit roas/cpa keys from input JSON. TS schema uses
     // primary_metric_name/primary_metric_value, so map them conditionally.
     manifest.push({
@@ -297,6 +321,7 @@ function buildManifest(
       frame_count: frames.length,
       // Use final creativesDir path, not the temp dir
       artifacts_dir: path.join(creativesDir, adId),
+      ...(hasVideo ? { video_path: path.join(creativesDir, adId, 'video.mp4') } : {}),
     });
   }
 
@@ -311,6 +336,7 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
     ?? path.join(homedir(), '.meta-ads-intel', 'data');
   const creativesDir = path.join(path.dirname(dataDir), 'creatives');
   const creativesMasterPath = path.join(dataDir, 'creatives-master.json');
+  const keepVideo = options.keepVideo ?? false;
   const warnings: string[] = [];
 
   // Security: restrict file permissions (ad spend data is sensitive)
@@ -407,7 +433,7 @@ export async function analyzeCreatives(options: AnalyzeCreativesOptions): Promis
         const thumbnailUrl = creativeJson.thumbnail_url;
 
         if (videoId) {
-          await processVideoAd(adDir, videoId, token, thumbnailUrl, warnings);
+          await processVideoAd(adDir, videoId, token, thumbnailUrl, warnings, keepVideo);
         } else {
           await processImageAd(adDir, creativeJson, warnings);
         }

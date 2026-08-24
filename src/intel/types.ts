@@ -632,12 +632,16 @@ export interface CreativeManifestEntry {
   frames: string[];
   frame_count: number;
   artifacts_dir: string;
+  /** Absolute path to the retained source video (audio+motion), present only when analysis ran with keepVideo. */
+  video_path?: string;
 }
 
 export interface AnalyzeCreativesOptions {
   inputFile: string;
   dataDir?: string;
   accessToken?: string;
+  /** Retain the source video file (raw original, with audio) per ad instead of deleting it after frame extraction. */
+  keepVideo?: boolean;
 }
 
 export interface AnalyzeCreativesResult {

@@ -15,10 +15,11 @@ export function registerIntelCommands(program: Command): void {
     .description('Run full analysis pipeline')
     .argument('[date-preset]', 'Date preset (last_7d, last_14d, last_30d)', 'last_14d')
     .option('--access-token <token>', 'Access token')
+    .option('--keep-video', 'Retain each ad\'s source video (audio+motion), not just extracted frames')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('json'))
-    .action(async (datePreset: string, opts: { accessToken?: string; output: OutputFormat }) => {
+    .action(async (datePreset: string, opts: { accessToken?: string; keepVideo?: boolean; output: OutputFormat }) => {
       try {
-        const result = await run({ datePreset, accessToken: opts.accessToken });
+        const result = await run({ datePreset, accessToken: opts.accessToken, keepVideo: opts.keepVideo });
         printOutput({
           run_dir: result.runDir,
           ...result.pipelineStatus,
