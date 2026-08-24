@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { homedir } from 'node:os';
 import { fetchInsightsAsync } from '../lib/http.js';
 import { resolveAccessToken } from '../auth.js';
-import { AD_INSIGHT_FIELDS, PULL_LIMIT, resolveIntelAccountId } from './pull.js';
+import { AD_INSIGHT_FIELDS, resolveIntelAccountId } from './pull.js';
 
 export interface FetchDailyOptions {
   since: string;
@@ -70,6 +70,10 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
     fs.mkdirSync(runDir, { recursive: true });
 
     console.error(`Fetching ad×daily insights for ${accountId} [${since} → ${until}]...`);
+    // No row cap (limit omitted): paginateAll follows every cursor to completion.
+    // A total cap would SILENTLY truncate — ad×day rows easily exceed a few
+    // hundred, and this is the creative-signal store's source of truth. Volume is
+    // bounded instead by the caller chunking backfill into ~30-day windows.
     const result = await fetchInsightsAsync<Record<string, unknown>>(
       `/${accountId}/insights`,
       token,
@@ -81,7 +85,6 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
           time_range: JSON.stringify({ since, until }),
         },
       },
-      PULL_LIMIT,
     );
 
     const file = path.join(runDir, 'ads-daily.json');

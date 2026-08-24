@@ -58,6 +58,9 @@ describe('fetchDaily', () => {
     // Retention fields ride along via the shared AD_INSIGHT_FIELDS.
     expect(opts?.params?.fields).toContain('video_thruplay_watched_actions');
     expect(opts?.params?.fields).toContain('video_p100_watched_actions');
+    // No row cap passed → paginateAll fetches every page (no silent backfill
+    // truncation). The 4th positional arg (limit) must be undefined.
+    expect(mockFetchAsync.mock.calls[0][3]).toBeUndefined();
   });
 
   it('writes ads-daily.json to a window-keyed run dir and returns metadata', async () => {

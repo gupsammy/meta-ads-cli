@@ -26,7 +26,7 @@ export const AD_INSIGHT_FIELDS = INSIGHT_FIELDS
   + ',video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions'
   + ',video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
 
-export const PULL_LIMIT = 500;
+const PULL_LIMIT = 500;
 
 // Scope the AD-LEVEL pulls to currently-delivering ads. Meta's synchronous
 // /insights edge rejects ad-level × daily over a full account with error code 1
