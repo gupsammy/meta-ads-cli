@@ -413,6 +413,39 @@ describe('analyzeCreatives', () => {
       expect(fs.existsSync(path.join(adDir, '_raw.mp4'))).toBe(false);
       expect(result.manifest[0].video_path).toBeUndefined();
     });
+
+    it('retains video (no orphaned _raw.mp4) when ffprobe metadata fails', async () => {
+      const inputFile = path.join(tmpDir, 'creative-media.json');
+      writeJson(inputFile, [makeMediaEntry()]);
+      writeJson(path.join(dataDir, 'creatives-master.json'), makeCreativesMaster());
+
+      // Transcode succeeds (writes _video.mp4) but ffprobe metadata throws.
+      mockGraphRequest.mockImplementation(async (pathArg: string) => {
+        if (pathArg.includes('/cr')) return makeVideoCreativeApiResponse();
+        return makeVideoApiResponse();
+      });
+      mockFetchSuccess();
+      mockExecFileSync.mockImplementation((cmd: unknown, args?: unknown) => {
+        if (cmd === 'ffprobe') throw new Error('ffprobe boom');
+        if (cmd === 'ffmpeg') {
+          const videoOut = (args as string[])?.find((a: string) => a.endsWith('_video.mp4'));
+          if (videoOut) fs.writeFileSync(videoOut, 'transcoded-no-audio');
+        }
+        return Buffer.from('');
+      });
+
+      const result = await analyzeCreatives({ inputFile, dataDir, keepVideo: true });
+
+      const adDir = path.join(creativesDir, 'a1');
+      // Raw retained under the stable name — not orphaned as _raw.mp4
+      expect(fs.existsSync(path.join(adDir, 'video.mp4'))).toBe(true);
+      expect(fs.readFileSync(path.join(adDir, 'video.mp4'), 'utf8')).toBe('fake-binary-data');
+      expect(fs.existsSync(path.join(adDir, '_raw.mp4'))).toBe(false);
+      expect(fs.existsSync(path.join(adDir, '_video.mp4'))).toBe(false);
+      // Still surfaced in the manifest despite the metadata failure
+      expect(result.manifest[0].video_path).toBe(path.join(adDir, 'video.mp4'));
+      expect(result.warnings).toContainEqual(expect.stringContaining('ffprobe metadata failed'));
+    });
   });
 
   describe('error handling', () => {

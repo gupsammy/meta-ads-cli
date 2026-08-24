@@ -128,6 +128,25 @@ interface VideoApiResponse {
   length?: number;
 }
 
+/**
+ * Retain a full-fidelity, audio-bearing copy as video.mp4 for downstream
+ * analysis. Prefer the raw original (has audio); fall back to the audio-stripped
+ * transcode only when raw is already gone (the transcode-failure branch renamed
+ * raw → videoPath). buildManifest detects the resulting video.mp4 and records
+ * its path. Best-effort — never throws, so it can't abort the per-ad pipeline.
+ */
+function retainSourceVideo(adDir: string, rawPath: string, videoPath: string): void {
+  const keptPath = path.join(adDir, 'video.mp4');
+  try {
+    if (fs.existsSync(rawPath)) {
+      fs.renameSync(rawPath, keptPath);
+      try { fs.unlinkSync(videoPath); } catch { /* ok */ }
+    } else if (fs.existsSync(videoPath)) {
+      fs.renameSync(videoPath, keptPath);
+    }
+  } catch { /* best-effort retention */ }
+}
+
 async function processVideoAd(
   adDir: string,
   videoId: string,
@@ -200,6 +219,10 @@ async function processVideoAd(
   } catch {
     writeJson(path.join(adDir, 'metadata.json'), { type: 'video', error: 'metadata_extraction_failed' });
     warnings.push(`ffprobe metadata failed for ${path.basename(adDir)}`);
+    // Retain the source even without ffprobe metadata — Gemini can still use it,
+    // and this avoids orphaning _raw.mp4 in the final dir (it was kept past the
+    // transcode step when keepVideo). Otherwise clean up as before.
+    if (keepVideo) { retainSourceVideo(adDir, rawPath, videoPath); return; }
     try { fs.unlinkSync(videoPath); } catch { /* ok */ }
     return;
   }
@@ -225,19 +248,7 @@ async function processVideoAd(
   } catch { /* best-effort */ }
 
   if (keepVideo) {
-    // Retain a full-fidelity, audio-bearing copy for downstream analysis.
-    // Prefer the raw original; fall back to _video.mp4 only when raw is already
-    // gone (the transcode-failure branch renamed raw → videoPath). buildManifest
-    // detects the resulting video.mp4 and records its path.
-    const keptPath = path.join(adDir, 'video.mp4');
-    try {
-      if (fs.existsSync(rawPath)) {
-        fs.renameSync(rawPath, keptPath);
-        try { fs.unlinkSync(videoPath); } catch { /* ok */ }
-      } else if (fs.existsSync(videoPath)) {
-        fs.renameSync(videoPath, keptPath);
-      }
-    } catch { /* best-effort retention — never abort the pipeline */ }
+    retainSourceVideo(adDir, rawPath, videoPath);
     return;
   }
 
