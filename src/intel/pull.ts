@@ -21,12 +21,12 @@ const INSIGHT_FIELDS =
 // video_view (3s views) already arrives via `actions`, so we add the thruplay,
 // quartile (p25–p100), and average-watch-time fields the base list omits. Kept off
 // the campaign/adset pulls to keep those requests lean and dodge level-rejection.
-const AD_INSIGHT_FIELDS = INSIGHT_FIELDS
+export const AD_INSIGHT_FIELDS = INSIGHT_FIELDS
   + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking'
   + ',video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions'
   + ',video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
 
-const PULL_LIMIT = 500;
+export const PULL_LIMIT = 500;
 
 // Scope the AD-LEVEL pulls to currently-delivering ads. Meta's synchronous
 // /insights edge rejects ad-level × daily over a full account with error code 1
@@ -70,7 +70,7 @@ function writeJson(filePath: string, data: unknown): void {
  * 2. Skill config → .account_id
  * 3. CLI config → .defaults.account_id
  */
-function resolveIntelAccountId(skillConfigPath: string): { accountId: string; source: string } {
+export function resolveIntelAccountId(skillConfigPath: string): { accountId: string; source: string } {
   // Step 1: env var
   const envVal = process.env['META_ADS_ACCOUNT_ID'];
   if (envVal) {
