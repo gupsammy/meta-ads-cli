@@ -15,8 +15,16 @@ const INSIGHT_FIELDS =
   'impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,' +
   'actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
-// Ad-level insight fields include diagnostic rankings (only meaningful at ad level — not campaign/adset)
-const AD_INSIGHT_FIELDS = INSIGHT_FIELDS + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking';
+// Ad-level insight fields add (a) diagnostic rankings and (b) video retention
+// metrics — both only meaningful at ad level (creative signals), not campaign/adset.
+// Retention drives hook-rate (3s-view ÷ impressions) and hold-rate (thruplay ÷ 3s-view):
+// video_view (3s views) already arrives via `actions`, so we add the thruplay,
+// quartile (p25–p100), and average-watch-time fields the base list omits. Kept off
+// the campaign/adset pulls to keep those requests lean and dodge level-rejection.
+const AD_INSIGHT_FIELDS = INSIGHT_FIELDS
+  + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking'
+  + ',video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions'
+  + ',video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
 
 const PULL_LIMIT = 500;
 
