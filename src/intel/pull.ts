@@ -31,12 +31,15 @@ const PULL_LIMIT = 500;
 /**
  * Fetch the account's ads with their creative, flattened to the ads-list shape
  * that creatives-master.json uses. Shared by pull() (the full run) and
- * fetch-daily --keep-video, so the creative field set stays in lockstep across
- * both entry points. Capped at PULL_LIMIT like every other master pull.
+ * fetch-daily --keep-video, so the creative field set — and the truncation
+ * signal — stay in lockstep across both entry points. Capped at PULL_LIMIT like
+ * every other master pull; pass `warnings` to receive the at-cap truncation
+ * notice (silently omitted when the array is not provided).
  */
 export async function fetchAdCreatives(
   accountId: string,
   token: string,
+  warnings?: string[],
   limit: number = PULL_LIMIT,
 ): Promise<AdCreativeFlat[]> {
   const result = await paginateAll<AdCreativeRow>(
@@ -45,7 +48,7 @@ export async function fetchAdCreatives(
     { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}' } },
     limit,
   );
-  return result.data.map(a => ({
+  const flat = result.data.map(a => ({
     id: a.id,
     name: a.name,
     creative_id: a.creative?.id ?? '',
@@ -54,6 +57,8 @@ export async function fetchAdCreatives(
     creative_image_url: a.creative?.image_url ?? '',
     creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
   }));
+  if (warnings) checkTruncation(flat.length, 'ad creatives', limit, warnings);
+  return flat;
 }
 
 // Scope the AD-LEVEL pulls to currently-delivering ads. Meta's synchronous
@@ -342,9 +347,8 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     // Creatives — 24h TTL
     const creativesMasterPath = path.join(dataDir, 'creatives-master.json');
     if (!isCacheFresh(creativesMasterPath, 24 * 60 * 60 * 1000)) {
-      const flatData = await fetchAdCreatives(accountId, token);
+      const flatData = await fetchAdCreatives(accountId, token, warnings);
       writeJson(creativesMasterPath, { data: flatData });
-      checkTruncation(flatData.length, 'ad creatives', PULL_LIMIT, warnings);
     }
     forceSymlink(creativesMasterPath, path.join(rawDir, 'creatives.json'));
 

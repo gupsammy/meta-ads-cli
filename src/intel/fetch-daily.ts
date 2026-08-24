@@ -30,6 +30,8 @@ export interface FetchDailyResult {
     total_ads: number;
     total_frames: number;
     videos_retained: number;
+    /** At-cap truncation notice + per-ad extraction failures, if any. */
+    warnings?: string[];
   };
 }
 
@@ -47,6 +49,12 @@ function writeJson(filePath: string, data: unknown): void {
  * videos land in the shared ~/.meta-ads-intel/creatives/<ad_id>/video.mp4, byte-
  * identical to `intel run --keep-video`.
  *
+ * SNAPSHOT, not archive: analyzeCreatives atomically REPLACES the whole shared
+ * creatives dir with this call's ad set (same as `intel run --keep-video`), so a
+ * later run evicts artifacts for ads that have since left "current". That is fine
+ * for creative-signal — the skill tags each video into SQLite (by asset_hash)
+ * right after this fetch, so the durable artifact is the tag, not the file.
+ *
  * Best-effort: ffmpeg missing or zero creatives → warn and skip. The metrics pull
  * has already succeeded by the time this runs; the optional video step never fails
  * the job. Returns undefined when skipped.
@@ -63,11 +71,16 @@ async function retainCreativeVideos(
     return undefined;
   }
 
-  const creatives = await fetchAdCreatives(accountId, token);
+  // `warnings` receives the at-cap (PULL_LIMIT) truncation notice: for accounts
+  // with more current ads than the cap, only a subset is retained — surface it
+  // rather than silently dropping the tail (same signal pull() emits).
+  const warnings: string[] = [];
+  const creatives = await fetchAdCreatives(accountId, token, warnings);
   if (creatives.length === 0) {
     console.error('No current ad creatives found — skipping --keep-video retention.');
     return undefined;
   }
+  for (const w of warnings) console.error(`  warning: ${w}`);
 
   // analyzeCreatives requires two inputs: creatives-master.json (the ad_id →
   // creative_id lookup, at the standard <dataDir> path intel run also writes) and
@@ -97,10 +110,12 @@ async function retainCreativeVideos(
     keepVideo: true,
   });
 
+  const allWarnings = [...warnings, ...res.warnings];
   return {
     total_ads: res.total_ads,
     total_frames: res.total_frames,
     videos_retained: res.manifest.filter(m => Boolean(m.video_path)).length,
+    ...(allWarnings.length ? { warnings: allWarnings } : {}),
   };
 }
 

@@ -186,6 +186,25 @@ describe('fetchDaily', () => {
       expect(fs.existsSync(result.file)).toBe(true);
     });
 
+    it('surfaces a truncation warning when the current-creatives fetch hits the cap', async () => {
+      mockRows();
+      // paginateAll caps at PULL_LIMIT (500); a full page signals possible truncation.
+      mockCreatives(Array.from({ length: 500 }, (_, i) => ({ id: `ad${i}`, name: `Ad ${i}`, creative: { id: `cr${i}` } })));
+      mockAnalyze.mockResolvedValue({
+        creatives_dir: '/x/creatives',
+        total_ads: 500,
+        total_frames: 0,
+        manifest: [],
+        warnings: ['API error for ad ad3: boom'],
+      });
+
+      const result = await fetchDaily({ since: '2026-06-01', until: '2026-06-07', dataDir, accessToken: 'tok', keepVideo: true });
+
+      // Truncation notice + the analyzeCreatives per-ad warning both surface in the summary.
+      expect(result.creatives?.warnings?.some(w => /500/.test(w))).toBe(true);
+      expect(result.creatives?.warnings).toContain('API error for ad ad3: boom');
+    });
+
     it('skips retention (but keeps metrics) when the account has no current creatives', async () => {
       mockRows();
       mockCreatives([]);
