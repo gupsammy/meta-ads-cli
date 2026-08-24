@@ -60,5 +60,6 @@ jobs:
                  `gh issue list --search "keywords"` and link to the original
 
             Apply labels using `gh issue edit <number> --add-label "label1,label2"`.
-          claude_args: >-
+          claude_args: |
+            --model sonnet
             --allowedTools "Read,Glob,Grep,Bash(gh issue:*),Bash(gh label:*)"
