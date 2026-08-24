@@ -61,9 +61,10 @@ All list commands accept `--limit`, `--after`, `--access-token`, `-o`, `-v`. Cre
 
 | Command | Description | Args |
 |---------|-------------|------|
-| `intel run [date-preset]` | Full pipeline: fetch → summarize → prepare | Default `last_14d`. Options: `last_7d`, `last_14d`, `last_30d` |
+| `intel run [date-preset]` | Full pipeline: fetch → summarize → prepare | Default `last_14d`. Options: `last_7d`, `last_14d`, `last_30d`. `--keep-video` retains each ad's source video (audio+motion), recorded as `video_path` in the creative manifest |
 | `intel defaults` | Compute target KPI defaults | `--account-id`, `--access-token` |
 | `intel scan` | Creative scan for onboarding | `--account-id`, `--access-token` |
+| `intel fetch-daily` | Scriptable ad×daily metrics pull for an explicit date range (backfill / catch-up) | `--since <YYYY-MM-DD>` and `--until <YYYY-MM-DD>` (both required, `since ≤ until`), `--access-token`. Writes `ads-daily.json` to `<dataDir>/daily/<since>_<until>/`. No `effective_status` filter (returns every ad that delivered in the window); fetches all rows (no cap) |
 
 ## Intel Pipeline
 
