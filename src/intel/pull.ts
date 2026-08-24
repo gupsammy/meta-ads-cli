@@ -6,7 +6,7 @@ import { resolveAccessToken } from '../auth.js';
 import { ConfigManager } from '../lib/config.js';
 import { summarize } from './summarize.js';
 import { prepare } from './prepare/index.js';
-import type { PipelineStatus, AdCreativeRow, RecommendationsData } from './types.js';
+import type { PipelineStatus, AdCreativeRow, AdCreativeFlat, RecommendationsData } from './types.js';
 
 // Same fields as src/commands/insights.ts — duplicated here to avoid coupling
 // pull's API contract to the CLI command's display fields.
@@ -27,6 +27,34 @@ export const AD_INSIGHT_FIELDS = INSIGHT_FIELDS
   + ',video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
 
 const PULL_LIMIT = 500;
+
+/**
+ * Fetch the account's ads with their creative, flattened to the ads-list shape
+ * that creatives-master.json uses. Shared by pull() (the full run) and
+ * fetch-daily --keep-video, so the creative field set stays in lockstep across
+ * both entry points. Capped at PULL_LIMIT like every other master pull.
+ */
+export async function fetchAdCreatives(
+  accountId: string,
+  token: string,
+  limit: number = PULL_LIMIT,
+): Promise<AdCreativeFlat[]> {
+  const result = await paginateAll<AdCreativeRow>(
+    `/${accountId}/ads`,
+    token,
+    { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}' } },
+    limit,
+  );
+  return result.data.map(a => ({
+    id: a.id,
+    name: a.name,
+    creative_id: a.creative?.id ?? '',
+    creative_body: a.creative?.body ?? '',
+    creative_title: a.creative?.title ?? '',
+    creative_image_url: a.creative?.image_url ?? '',
+    creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
+  }));
+}
 
 // Scope the AD-LEVEL pulls to currently-delivering ads. Meta's synchronous
 // /insights edge rejects ad-level × daily over a full account with error code 1
@@ -314,24 +342,9 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     // Creatives — 24h TTL
     const creativesMasterPath = path.join(dataDir, 'creatives-master.json');
     if (!isCacheFresh(creativesMasterPath, 24 * 60 * 60 * 1000)) {
-      const creativesResult = await paginateAll<AdCreativeRow>(
-        `/${accountId}/ads`,
-        token,
-        { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}' } },
-        PULL_LIMIT,
-      );
-      // Flatten nested creative fields to match ads list CLI output format
-      const flatData = creativesResult.data.map(a => ({
-        id: a.id,
-        name: a.name,
-        creative_id: a.creative?.id ?? '',
-        creative_body: a.creative?.body ?? '',
-        creative_title: a.creative?.title ?? '',
-        creative_image_url: a.creative?.image_url ?? '',
-        creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
-      }));
+      const flatData = await fetchAdCreatives(accountId, token);
       writeJson(creativesMasterPath, { data: flatData });
-      checkTruncation(creativesResult.data.length, 'ad creatives', PULL_LIMIT, warnings);
+      checkTruncation(flatData.length, 'ad creatives', PULL_LIMIT, warnings);
     }
     forceSymlink(creativesMasterPath, path.join(rawDir, 'creatives.json'));
 

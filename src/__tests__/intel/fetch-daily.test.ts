@@ -3,20 +3,36 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// Mock http — fetchInsightsAsync must not hit the network. paginateAll /
-// graphRequestWithRetry are also mocked because pull.js (imported for
-// AD_INSIGHT_FIELDS / resolveIntelAccountId) pulls them in at module load.
+// Mock http — fetchInsightsAsync must not hit the network. paginateAll (used by
+// fetchAdCreatives for --keep-video) / graphRequestWithRetry are also mocked
+// because pull.js (imported for AD_INSIGHT_FIELDS / resolveIntelAccountId /
+// fetchAdCreatives) pulls them in at module load.
 vi.mock('../../lib/http.js', () => ({
   fetchInsightsAsync: vi.fn(),
   paginateAll: vi.fn(),
   graphRequestWithRetry: vi.fn(),
 }));
 
+// The --keep-video path reuses the visual pipeline; mock its two seams so no
+// ffmpeg/network is touched: hasFfmpeg (run.js) and analyzeCreatives (creatives.js).
+vi.mock('../../intel/creatives.js', () => ({ analyzeCreatives: vi.fn() }));
+vi.mock('../../intel/run.js', () => ({ hasFfmpeg: vi.fn(() => true) }));
+
 import { fetchDaily } from '../../intel/fetch-daily.js';
-import { fetchInsightsAsync } from '../../lib/http.js';
+import { fetchInsightsAsync, paginateAll } from '../../lib/http.js';
+import { analyzeCreatives } from '../../intel/creatives.js';
+import { hasFfmpeg } from '../../intel/run.js';
 import type { PaginatedResult } from '../../lib/http.js';
 
 const mockFetchAsync = vi.mocked(fetchInsightsAsync);
+const mockPaginate = vi.mocked(paginateAll);
+const mockAnalyze = vi.mocked(analyzeCreatives);
+const mockHasFfmpeg = vi.mocked(hasFfmpeg);
+
+/** Seed the current-creatives snapshot that fetchAdCreatives pulls via paginateAll. */
+function mockCreatives(rows: Array<Record<string, unknown>>) {
+  mockPaginate.mockResolvedValue({ data: rows, has_more: false } as PaginatedResult<Record<string, unknown>>);
+}
 
 let tmpDir: string;
 let dataDir: string;
@@ -31,6 +47,7 @@ beforeEach(() => {
   dataDir = path.join(tmpDir, 'data');
   process.env['META_ADS_ACCOUNT_ID'] = 'act_test';
   vi.clearAllMocks();
+  mockHasFfmpeg.mockReturnValue(true); // cleared above; keep-video path needs ffmpeg
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -101,5 +118,83 @@ describe('fetchDaily', () => {
 
     expect(result.account_id).toBe('act_999888');
     expect(mockFetchAsync.mock.calls[0][0]).toBe('/act_999888/insights');
+  });
+
+  describe('--keep-video', () => {
+    it('snapshots current creatives and retains videos via analyzeCreatives', async () => {
+      mockRows();
+      mockCreatives([
+        { id: 'ad1', name: 'Ad One', creative: { id: 'cr1' } },
+        { id: 'ad2', name: 'Ad Two', creative: { id: 'cr2' } },
+      ]);
+      // Two ads processed, only one yielded a retained video.
+      mockAnalyze.mockResolvedValue({
+        creatives_dir: '/x/creatives',
+        total_ads: 2,
+        total_frames: 8,
+        manifest: [
+          { ad_id: 'ad1', video_path: '/x/creatives/ad1/video.mp4' },
+          { ad_id: 'ad2' }, // image ad — no video_path
+        ] as never,
+        warnings: [],
+      });
+
+      const result = await fetchDaily({ since: '2026-05-01', until: '2026-05-07', dataDir, accessToken: 'tok', keepVideo: true });
+
+      // analyzeCreatives invoked once with keepVideo:true and this window's media file.
+      expect(mockAnalyze).toHaveBeenCalledTimes(1);
+      const arg = mockAnalyze.mock.calls[0][0];
+      expect(arg.keepVideo).toBe(true);
+      expect(arg.dataDir).toBe(dataDir);
+      expect(arg.accessToken).toBe('tok');
+      expect(arg.inputFile).toBe(path.join(dataDir, 'daily', '2026-05-01_2026-05-07', 'creative-media.json'));
+
+      // creatives-master.json (the ad_id → creative_id lookup) written at the dataDir root.
+      const master = JSON.parse(fs.readFileSync(path.join(dataDir, 'creatives-master.json'), 'utf8'));
+      expect(master.data).toHaveLength(2);
+      expect(master.data[0]).toMatchObject({ id: 'ad1', creative_id: 'cr1' });
+
+      // creative-media.json (the ad list to process) written in the run dir.
+      const media = JSON.parse(fs.readFileSync(arg.inputFile, 'utf8'));
+      expect(media).toHaveLength(2);
+      expect(media[0]).toMatchObject({ ad_id: 'ad1', ad_name: 'Ad One' });
+
+      // Summary: videos_retained counts only manifest entries with a video_path.
+      expect(result.creatives).toEqual({ total_ads: 2, total_frames: 8, videos_retained: 1 });
+    });
+
+    it('does not touch the creative pipeline without --keep-video', async () => {
+      mockRows();
+
+      const result = await fetchDaily({ since: '2026-05-01', until: '2026-05-07', dataDir, accessToken: 'tok' });
+
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(mockPaginate).not.toHaveBeenCalled();
+      expect(result.creatives).toBeUndefined();
+      expect(fs.existsSync(path.join(dataDir, 'creatives-master.json'))).toBe(false);
+    });
+
+    it('skips retention (but keeps metrics) when ffmpeg is absent', async () => {
+      mockRows();
+      mockHasFfmpeg.mockReturnValue(false);
+
+      const result = await fetchDaily({ since: '2026-05-01', until: '2026-05-07', dataDir, accessToken: 'tok', keepVideo: true });
+
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(result.creatives).toBeUndefined();
+      // Metrics pull still succeeded.
+      expect(fs.existsSync(result.file)).toBe(true);
+    });
+
+    it('skips retention (but keeps metrics) when the account has no current creatives', async () => {
+      mockRows();
+      mockCreatives([]);
+
+      const result = await fetchDaily({ since: '2026-05-01', until: '2026-05-07', dataDir, accessToken: 'tok', keepVideo: true });
+
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(result.creatives).toBeUndefined();
+      expect(fs.existsSync(result.file)).toBe(true);
+    });
   });
 });

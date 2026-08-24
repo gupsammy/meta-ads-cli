@@ -3,7 +3,10 @@ import * as path from 'node:path';
 import { homedir } from 'node:os';
 import { fetchInsightsAsync } from '../lib/http.js';
 import { resolveAccessToken } from '../auth.js';
-import { AD_INSIGHT_FIELDS, resolveIntelAccountId } from './pull.js';
+import { AD_INSIGHT_FIELDS, resolveIntelAccountId, fetchAdCreatives } from './pull.js';
+import { analyzeCreatives } from './creatives.js';
+import { hasFfmpeg } from './run.js';
+import type { CreativeMediaEntry } from './types.js';
 
 export interface FetchDailyOptions {
   since: string;
@@ -11,6 +14,8 @@ export interface FetchDailyOptions {
   dataDir?: string;
   configPath?: string;
   accessToken?: string;
+  /** Also retain each current ad's source video (audio+motion) for tagging. */
+  keepVideo?: boolean;
 }
 
 export interface FetchDailyResult {
@@ -20,10 +25,83 @@ export interface FetchDailyResult {
   until: string;
   rows: number;
   file: string;
+  /** Present only when --keep-video ran and the video step was not skipped. */
+  creatives?: {
+    total_ads: number;
+    total_frames: number;
+    videos_retained: number;
+  };
 }
 
 function writeJson(filePath: string, data: unknown): void {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+/**
+ * --keep-video companion to the metrics pull: snapshot the account's CURRENT ad
+ * creatives and retain each source video (audio+motion) so the skill can tag it.
+ *
+ * Window-independent by design: Meta's video source URLs expire for deleted ads,
+ * so only currently-live creatives can be fetched — the [since, until] window
+ * governs metrics, not which videos exist. Reuses analyzeCreatives wholesale, so
+ * videos land in the shared ~/.meta-ads-intel/creatives/<ad_id>/video.mp4, byte-
+ * identical to `intel run --keep-video`.
+ *
+ * Best-effort: ffmpeg missing or zero creatives → warn and skip. The metrics pull
+ * has already succeeded by the time this runs; the optional video step never fails
+ * the job. Returns undefined when skipped.
+ */
+async function retainCreativeVideos(
+  accountId: string,
+  token: string,
+  dataDir: string,
+  runDir: string,
+): Promise<FetchDailyResult['creatives']> {
+  if (!hasFfmpeg()) {
+    console.error('ffmpeg/ffprobe not installed — skipping --keep-video retention.');
+    console.error('  Install with: brew install ffmpeg');
+    return undefined;
+  }
+
+  const creatives = await fetchAdCreatives(accountId, token);
+  if (creatives.length === 0) {
+    console.error('No current ad creatives found — skipping --keep-video retention.');
+    return undefined;
+  }
+
+  // analyzeCreatives requires two inputs: creatives-master.json (the ad_id →
+  // creative_id lookup, at the standard <dataDir> path intel run also writes) and
+  // a creative-media.json list of ads to process (written into this window's run
+  // dir). rank/metric fields are display-only in a raw daily pull — placeholders.
+  writeJson(path.join(dataDir, 'creatives-master.json'), { data: creatives });
+  const media: CreativeMediaEntry[] = creatives.map(c => ({
+    ad_id: c.id,
+    ad_name: c.name ?? null,
+    objective: '',
+    rank: 'winner',
+    primary_metric_name: '',
+    primary_metric_value: 0,
+    spend: 0,
+    creative_image_url: c.creative_image_url,
+    creative_thumbnail_url: c.creative_thumbnail_url,
+  }));
+  const mediaFile = path.join(runDir, 'creative-media.json');
+  writeJson(mediaFile, media);
+
+  console.error('');
+  console.error('=== Retaining source videos (--keep-video) ===');
+  const res = await analyzeCreatives({
+    inputFile: mediaFile,
+    dataDir,
+    accessToken: token,
+    keepVideo: true,
+  });
+
+  return {
+    total_ads: res.total_ads,
+    total_frames: res.total_frames,
+    videos_retained: res.manifest.filter(m => Boolean(m.video_path)).length,
+  };
 }
 
 /**
@@ -90,6 +168,12 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
     const file = path.join(runDir, 'ads-daily.json');
     writeJson(file, { data: result.data });
 
+    // Optional: retain current source videos for tagging. Runs AFTER metrics are
+    // safely on disk so a video-step failure never costs the metrics pull.
+    const creatives = options.keepVideo
+      ? await retainCreativeVideos(accountId, token, dataDir, runDir)
+      : undefined;
+
     return {
       run_dir: runDir,
       account_id: accountId,
@@ -97,6 +181,7 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
       until,
       rows: result.data.length,
       file,
+      ...(creatives ? { creatives } : {}),
     };
   } finally {
     if (oldUmask !== undefined) { try { process.umask(oldUmask); } catch { /* ok */ } }
