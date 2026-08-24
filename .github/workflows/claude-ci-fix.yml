@@ -79,5 +79,6 @@ jobs:
                `pnpm install && pnpm typecheck && pnpm lint && pnpm build && pnpm test`
             5. Commit the fix with a clear message explaining what broke and why.
             6. Create a PR targeting the failed branch with the fix.
-          claude_args: >-
+          claude_args: |
+            --model sonnet
             --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(pnpm:*),Bash(node:*)"
