@@ -70,6 +70,8 @@ class Base(unittest.TestCase):
         self.calls["analyze"].append(path)
         if path.endswith("a2.mp4"):
             raise deterministic.FfmpegError("ffprobe: moov atom not found")
+        if path.endswith("a1.mp4"):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")   # malformed ffprobe JSON
         return det_result(cuts=len(self.calls["analyze"]))
 
     def tag_fn(self, conn, *, max_ads, **kw):
@@ -91,8 +93,11 @@ class RunTest(Base):
         self.assertEqual((st["since"], st["until"]), ("2026-08-17", "2026-08-30"), "last_14d ends yesterday")
         self.assertEqual(self.calls["sync"], [TODAY]); self.assertEqual(self.calls["assets"], [TODAY])
         det = st["steps"]["deterministic"]
-        self.assertEqual((det["analyzed"], det["failed"], det["shared_ads"]), (2, 1, 3), "3 hashes, 6 ads; h2 fails")
-        self.assertTrue(store.get_tags(self.conn, "h2")["deterministic"]["failed"], "failure cached, not retried")
+        self.assertEqual((det["analyzed"], det["failed"], det["shared_ads"]), (1, 2, 3),
+                         "3 hashes, 6 ads; h2 = FfmpegError, h1 = non-ffmpeg exception: both cached, run continues")
+        for h in ("h1", "h2"):
+            self.assertTrue(store.get_tags(self.conn, h)["deterministic"]["failed"], "failure cached, not retried")
+        self.assertTrue(any("Expecting value" in w for w in det["warnings"]), "error text surfaces, never swallowed")
         self.assertEqual(st["steps"]["gemini"]["calls"], 3, "one Gemini call per asset_hash")
         self.assertEqual(store.get_tags(self.conn, "h2")["tags"]["format_style"], "ugc",
                          "a deterministic failure does not block Gemini on the same asset")
@@ -122,7 +127,7 @@ class RunTest(Base):
         st = self.go(no_sync=True, no_tag=True)
         self.assertEqual(self.calls["sync"], []); self.assertEqual(self.calls["tag"], [])
         self.assertEqual(st["steps"]["sync"], {"skipped": True}); self.assertEqual(st["steps"]["gemini"], {"skipped": True})
-        self.assertEqual(st["steps"]["deterministic"]["analyzed"], 2, "ffmpeg lane still runs without Gemini")
+        self.assertEqual(st["steps"]["deterministic"]["analyzed"], 1, "ffmpeg lane still runs without Gemini")
 
         def no_key(conn, **kw):
             raise tg.ApiUnavailable("GEMINI_API_KEY not set")

@@ -66,8 +66,10 @@ def resolve_account_id(conn, explicit: str | None = None, config_path: Path = IN
 
 # ── step 3: deterministic features for videos that lack them ───────────────────
 def run_deterministic(conn, *, analyze=deterministic.analyze) -> dict:
-    """One ffmpeg pass per new asset_hash. A failure is cached as an empty feature set so the
-    same broken file is not re-analysed every run (correlate treats it as attribute-absent)."""
+    """One ffmpeg pass per new asset_hash. ANY failure (ffmpeg, unreadable file, malformed
+    ffprobe JSON, ...) is cached as an empty feature set so the same broken file is not
+    re-analysed every run; correlate treats it as attribute-absent. The error text lands in
+    the run warnings, so nothing is swallowed silently."""
     out = {"analyzed": 0, "failed": 0, "shared_ads": 0, "warnings": []}
     done: set[str] = set()
     for ad in store.untagged_ads(conn, need="deterministic"):
@@ -79,7 +81,7 @@ def run_deterministic(conn, *, analyze=deterministic.analyze) -> dict:
         try:
             result = analyze(vp)
             out["analyzed"] += 1
-        except (deterministic.FfmpegError, OSError) as e:
+        except Exception as e:  # noqa: BLE001 — per-asset boundary: one bad video must never abort the run
             result = {"deterministic_version": deterministic.DETERMINISTIC_VERSION,
                       "audio_analysis": "none", "features": {}, "failed": True, "warnings": [str(e)]}
             out["failed"] += 1
