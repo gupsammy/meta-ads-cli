@@ -242,6 +242,27 @@ describe('fetchInsightsAsync', () => {
     expect(result.has_more).toBe(false);
   });
 
+  it('retries the submit on a transient 5xx before succeeding', async () => {
+    // Regression: the submit POST must go through graphRequestWithRetry like the
+    // poll/page steps. With bare graphRequest the first 503 would throw and the
+    // whole intel run would die on a transient error.
+    nock(BASE_URL).post('/v21.0/act_123/insights').reply(503, { error: { message: 'temporarily unavailable', code: 2 } });
+    nock(BASE_URL).post('/v21.0/act_123/insights').reply(200, { report_run_id: '888' });
+    nock(BASE_URL).get('/v21.0/888').query(true).reply(200, { id: '888', async_status: 'Job Completed' });
+    nock(BASE_URL).get('/v21.0/888/insights').query(true).reply(200, { data: [{ ad_id: 'a1' }] });
+
+    const result = await fetchInsightsAsync<{ ad_id: string }>(
+      '/act_123/insights',
+      TOKEN,
+      { params: { level: 'ad' } },
+      undefined,
+      { intervalMs: 0 },
+    );
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].ad_id).toBe('a1');
+  });
+
   it('polls repeatedly until the job leaves a running state', async () => {
     nock(BASE_URL).post('/v21.0/act_123/insights').reply(200, { report_run_id: '777' });
     nock(BASE_URL).get('/v21.0/777').query(true).reply(200, { id: '777', async_status: 'Job Running', async_percent_completion: 40 });
