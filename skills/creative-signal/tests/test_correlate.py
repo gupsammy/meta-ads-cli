@@ -123,6 +123,21 @@ class ComputeSignalsTest(unittest.TestCase):
         signals, _ = correlate.compute_signals(ads)
         self.assertFalse(any(s["attribute"] == "first3s_content=face" for s in signals))
 
+    def test_processing_status_and_non_scalar_values_are_never_tested(self) -> None:
+        ads = make_ads(60)
+        for i, a in enumerate(ads):
+            # uneven librosa success, correlated with the planted face lift by construction
+            a["attributes"]["audio_analysis"] = "advanced" if i % 2 == 0 else "basic"
+            a["attributes"]["tag_failed"] = i % 3 == 0
+            a["attributes"]["scene_list"] = [1.0, 2.0] if i % 2 == 0 else [3.0]     # list-valued
+            a["attributes"]["nested"] = {"k": i % 2}                                 # dict-valued
+        signals, _ = correlate.compute_signals(ads)
+        tested = {s["attribute"].split("=")[0].split(">=")[0] for s in signals}
+        for banned in ("audio_analysis", "tag_failed", "scene_list", "nested"):
+            self.assertNotIn(banned, tested, banned)
+        # the real attribute is still tested
+        self.assertIn("first3s_content", tested)
+
     def test_missing_attribute_values_are_absent_not_zero(self) -> None:
         ads = make_ads(40)
         for a in ads[:30]:
@@ -216,6 +231,10 @@ class StoreBackedTest(unittest.TestCase):
         self.assertNotIn("Traceback", cp.stderr)
         cp = subprocess.run([sys.executable, str(SCRIPTS / "correlate.py")], capture_output=True, text=True, env=env)
         self.assertEqual(cp.returncode, 1)
+        cp = subprocess.run([sys.executable, str(SCRIPTS / "correlate.py"), "--since", "13-2026", "--until", "2026-08-31"],
+                            capture_output=True, text=True, env=env)
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("[correlate] error:", cp.stderr)   # malformed date fails loudly, not as an empty query
 
 
 if __name__ == "__main__":

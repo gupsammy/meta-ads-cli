@@ -44,10 +44,13 @@ CORRELATE_VERSION = 1
 METRICS = ("hook_rate", "hold_rate")
 MIN_IMPRESSIONS = 1000       # below this a single day's noise dominates the rate
 MIN_GROUP = 3                # smaller than this there is nothing to report, even anecdotally
-# Free text / identifiers / lists — shown per ad, never correlated.
+# Shown per ad, never correlated: free text, raw dims, and PROCESSING STATUS fields.
+# audio_analysis (none|basic|advanced) records whether librosa ran on that video, not what the
+# creative contains — uneven librosa success would masquerade as a creative signal.
+# Non-scalar values (lists/dicts) are additionally rejected structurally in _splits.
 NON_ATTRIBUTES = {
     "transcript", "hook_text", "cta_text", "cut_times", "width", "height", "aspect_value",
-    "deterministic_version", "audio_analysis_warnings",
+    "deterministic_version", "audio_analysis", "tag_failed",
 }
 WINDOWS = {"last_7d": 7, "last_14d": 14, "last_30d": 30}
 
@@ -134,6 +137,8 @@ def _splits(attr: str, values: list) -> list[tuple[str, list[bool]]]:
     present = [v for v in values if v is not None]
     if len(present) < 2 * MIN_GROUP:
         return []
+    if any(isinstance(v, (list, dict, tuple, set)) for v in present):
+        return []  # structural guard: lists/dicts are never a testable attribute, whatever their key
     if all(_is_num(v) for v in present):
         med = statistics.median(present)
         mask = [v is not None and v >= med for v in values]
@@ -293,6 +298,8 @@ def main(argv: list[str] | None = None) -> int:
             since, until = window_dates(a.window, a.today)
             label = a.label or a.window
         elif a.since and a.until:
+            for v in (a.since, a.until):
+                date.fromisoformat(v)  # malformed dates must fail here, not as a silent empty query
             since, until, label = a.since, a.until, a.label
         else:
             raise ValueError("pass --window or both --since and --until")
