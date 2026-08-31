@@ -53,7 +53,10 @@ def beat_grid(y: np.ndarray, sr: int) -> tuple[float, int]:
 
 def energy_structure(y: np.ndarray, sr: int, dur: float) -> dict:
     """RMS @ 1 s frames → normalized energy curve, level phases, surges/drops, hard stops."""
-    rms = librosa.feature.rms(y=y, hop_length=sr)[0]  # ~1 s frames
+    # frame_length=sr so each 1 s hop integrates the WHOLE second. The upstream beatgrid
+    # script left the default frame_length=2048 (~93 ms per sample) — fine for beat-relative
+    # work, under-samples a coarse energy narrative.
+    rms = librosa.feature.rms(y=y, frame_length=sr, hop_length=sr)[0]
     rms = rms / (rms.max() + 1e-9)
     norms = [float(n) for n in rms]
 

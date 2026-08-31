@@ -102,8 +102,10 @@ def aspect_label(width: int, height: int) -> tuple[str, float | None]:
     if not width or not height:
         return "other", None
     value = width / height
-    best = min(ASPECT_LABELS, key=lambda t: abs(math.log(value / t[0])))
-    label = best[1] if abs(value - best[0]) / best[0] <= 0.06 else "other"
+    # One metric for both pick and accept: log-ratio distance, symmetric for 9:16 vs 16:9.
+    dist = {label: abs(math.log(value / ratio)) for ratio, label in ASPECT_LABELS}
+    best = min(dist, key=lambda k: dist[k])
+    label = best if dist[best] <= math.log(1.06) else "other"
     return label, round(value, 3)
 
 
@@ -198,7 +200,13 @@ def main() -> None:
     ap.add_argument("--no-advanced", action="store_true", help="skip the librosa lane even if installed")
     ap.add_argument("--scene-threshold", type=float, default=SCENE_THRESHOLD)
     a = ap.parse_args()
-    result = analyze(a.video, advanced=not a.no_advanced, scene_threshold=a.scene_threshold)
+    try:
+        result = analyze(a.video, advanced=not a.no_advanced, scene_threshold=a.scene_threshold)
+    except (FfmpegError, OSError) as e:
+        # Callers run this as a subprocess: one line on stderr + exit 1, not a traceback to parse.
+        # OSError covers ffmpeg/ffprobe missing from PATH and an unreadable input path.
+        print(f"[deterministic] error: {e}", file=sys.stderr)
+        sys.exit(1)
     text = json.dumps(result, indent=2)
     if a.out:
         Path(a.out).write_text(text + "\n", encoding="utf-8")

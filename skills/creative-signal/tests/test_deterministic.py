@@ -140,6 +140,33 @@ class DeterministicCoreTest(unittest.TestCase):
         for k in deterministic.CORE_KEYS:
             self.assertEqual(f[k], base[k], k)
 
+    def test_non_video_input_raises_ffmpeg_error(self) -> None:
+        not_video = self.tmp / "not_a_video.txt"
+        not_video.write_text("definitely not an mp4\n")
+        with self.assertRaises(deterministic.FfmpegError):
+            deterministic.probe(str(not_video))
+        with self.assertRaises(deterministic.FfmpegError):
+            deterministic.analyze(str(not_video))
+
+    def test_cli_error_is_one_line_and_exit_1(self) -> None:
+        # Callers spawn this script; a failure must be a short stderr line + exit 1, not a traceback.
+        cp = subprocess.run(
+            [sys.executable, str(SCRIPTS / "deterministic.py"), str(self.tmp / "missing.mp4")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(cp.returncode, 1)
+        self.assertIn("[deterministic] error:", cp.stderr)
+        self.assertNotIn("Traceback", cp.stderr)
+        self.assertEqual(cp.stdout, "")
+
+    def test_aspect_label_boundaries(self) -> None:
+        self.assertEqual(deterministic.aspect_label(1080, 1920), ("9:16", 0.562))
+        self.assertEqual(deterministic.aspect_label(1920, 1080), ("16:9", 1.778))
+        self.assertEqual(deterministic.aspect_label(1080, 1350), ("4:5", 0.8))
+        self.assertEqual(deterministic.aspect_label(1080, 1080), ("1:1", 1.0))
+        self.assertEqual(deterministic.aspect_label(1000, 1500)[0], "other")  # 2:3 sits between 9:16 and 4:5
+        self.assertEqual(deterministic.aspect_label(0, 1080), ("other", None))
+
     def test_cli_writes_json(self) -> None:
         out = self.tmp / "features.json"
         cp = subprocess.run(

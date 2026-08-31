@@ -1,3 +1,4 @@
 # creative-signal core — the ONLY required pip dependency (spec §11).
 # Deterministic features run through ffmpeg/ffprobe + stdlib; stats are stdlib.
-google-genai
+# Floor pin only: reproducible-enough to debug, loose enough not to fight pip.
+google-genai>=1.0

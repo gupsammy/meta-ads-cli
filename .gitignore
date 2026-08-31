@@ -8,3 +8,8 @@ coverage/
 .local/
 agents/
 analysis/
+
+# Python (skills/creative-signal scripts + skill-local venv)
+__pycache__/
+*.pyc
+skills/*/.venv/
