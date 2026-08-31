@@ -1,0 +1,9 @@
+# OPTIONAL advanced audio lane (decision B+). Onboarding tries this install once,
+# best-effort; if it fails the skill still works with audio_analysis="basic".
+# Never make these a hard requirement — librosa pulls numba/llvmlite, the most
+# install-fragile wheels in the stack.
+# Verified 2026-08-31: Python 3.13 + librosa 1.0.0. Floor pins keep a future breakage
+# attributable to a known version range rather than "worked yesterday".
+librosa>=0.10,<2
+numpy>=1.26
+soundfile>=0.12
