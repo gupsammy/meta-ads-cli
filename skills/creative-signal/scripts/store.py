@@ -420,8 +420,14 @@ def untagged_ads(conn: sqlite3.Connection, since: str | None = None, *,
 def set_ad_asset(conn: sqlite3.Connection, ad_id: str, creative_id: str | None,
                  asset_hash: str | None, video_path: str | None) -> None:
     with conn:
-        conn.execute("UPDATE ads SET creative_id=?, asset_hash=?, video_path=? WHERE ad_id=?",
-                     (creative_id, asset_hash, video_path, ad_id))
+        set_ad_asset_nocommit(conn, ad_id, creative_id, asset_hash, video_path)
+
+
+def set_ad_asset_nocommit(conn: sqlite3.Connection, ad_id: str, creative_id: str | None,
+                          asset_hash: str | None, video_path: str | None) -> None:
+    """Same UPDATE without the commit — for callers batching many rows in one transaction."""
+    conn.execute("UPDATE ads SET creative_id=?, asset_hash=?, video_path=? WHERE ad_id=?",
+                 (creative_id, asset_hash, video_path, ad_id))
 
 
 def upsert_tags(conn: sqlite3.Connection, asset_hash: str, *, creative_id: str | None = None,

@@ -113,29 +113,31 @@ def register_assets(conn, manifest: list[dict], lookup: dict[str, str | None],
     roster = {r["ad_id"] for r in conn.execute("SELECT ad_id FROM ads")}
     seen: set[str] = set()
     hashes: set[str] = set()
-    for entry in manifest:
-        ad_id = str(entry.get("ad_id") or "")
-        if not ad_id:
-            continue
-        seen.add(ad_id)
-        if ad_id not in roster:
-            res.unknown_ads += 1
-            continue
-        vp = entry.get("video_path")
-        if vp and Path(vp).is_file():
-            h = sha256_file(vp)
-            store.set_ad_asset(conn, ad_id, lookup.get(ad_id), h, str(vp))
-            res.registered.append(ad_id)
-            hashes.add(h)
-            continue
-        img = Path(entry.get("artifacts_dir") or "") / "image.png"
-        if img.is_file():
-            store.set_ad_asset(conn, ad_id, lookup.get(ad_id), sha256_file(img), None)
-            res.image_ads.append(ad_id)
-    for ad in candidates:
-        if ad["ad_id"] not in seen:
-            store.set_ad_asset(conn, ad["ad_id"], ad.get("creative_id"), UNAVAILABLE, None)
-            res.unavailable.append(ad["ad_id"])
+    with conn:  # one transaction for the whole snapshot (up to 500 ads), not one commit per row
+        for entry in manifest:
+            ad_id = str(entry.get("ad_id") or "")
+            if not ad_id:
+                continue
+            seen.add(ad_id)
+            if ad_id not in roster:
+                res.unknown_ads += 1
+                continue
+            vp = entry.get("video_path")
+            if vp and Path(vp).is_file():
+                h = sha256_file(vp)
+                store.set_ad_asset_nocommit(conn, ad_id, lookup.get(ad_id), h, str(vp))
+                res.registered.append(ad_id)
+                hashes.add(h)
+                continue
+            adir = entry.get("artifacts_dir")
+            img = Path(adir) / "image.png" if adir else None
+            if img and img.is_file():
+                store.set_ad_asset_nocommit(conn, ad_id, lookup.get(ad_id), sha256_file(img), None)
+                res.image_ads.append(ad_id)
+        for ad in candidates:
+            if ad["ad_id"] not in seen:
+                store.set_ad_asset_nocommit(conn, ad["ad_id"], ad.get("creative_id"), UNAVAILABLE, None)
+                res.unavailable.append(ad["ad_id"])
     res.distinct_videos = len(hashes)
     return res
 
@@ -224,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
                            recheck=a.recheck, dry_run=a.dry_run, register_only=a.register_only)
         print(json.dumps(res.to_dict(), indent=2))
         return 0
-    except (sync.FetchError, ValueError, OSError) as e:
+    except (sync.FetchError, store.sqlite3.Error, ValueError, OSError) as e:
         print(f"fetch_assets: {e}", file=sys.stderr)
         return 1
 

@@ -126,6 +126,22 @@ class RegisterTest(Base):
         self.assertEqual(sorted(a["ad_id"] for a in store.untagged_ads(self.conn, need="tags")), ["v1", "v2"])
         self.assertEqual(fa.needs_asset(self.conn), [], "everything resolved → next run fetches nothing")
 
+    def test_registration_is_one_transaction_and_missing_artifacts_dir_is_not_an_image(self):
+        self.roster("v1", "img", "odd")
+        self.snap.write({"v1": "video", "img": "image", "odd": "image"})
+        manifest = fa.load_manifest(self.snap.cdir)
+        for e in manifest:
+            if e["ad_id"] == "odd":
+                del e["artifacts_dir"]   # never happens from creatives.ts; must not resolve to CWD/image.png
+        stmts: list[str] = []
+        self.conn.set_trace_callback(stmts.append)
+        r = fa.register_assets(self.conn, manifest, {}, fa.needs_asset(self.conn))
+        self.conn.set_trace_callback(None)
+        self.assertEqual(sum(1 for q in stmts if q.strip().upper() == "COMMIT"), 1, "whole snapshot in one transaction")
+        self.assertEqual(sum(1 for q in stmts if q.lstrip().upper().startswith("UPDATE")), 2)
+        self.assertEqual((r.registered, r.image_ads), (["v1"], ["img"]))
+        self.assertIsNone(self.ad("odd")["asset_hash"])
+
     def test_missing_master_and_manifest_are_tolerated(self):
         self.assertEqual(fa.load_manifest(self.snap.cdir), [])
         self.assertEqual(fa.load_creative_lookup(self.snap.dd), {})
