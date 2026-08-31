@@ -155,9 +155,42 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(a1["hold_rate"], 0.4)     # 360 / 900
         self.assertIsNone(agg["a3"]["hook_rate"])  # zero impressions → None, not 0
         self.assertIsNone(agg["a4"]["hold_rate"])  # no thruplay fetched → None, not 0
+        self.assertIsNone(agg["a4"]["thruplay"])
         self.assertEqual(agg["a4"]["hook_rate"], 0.3)
         # window filter
         self.assertEqual(store.aggregate_ads(self.conn, "2026-08-13", "2026-08-31"), [])
+
+    def test_hold_rate_none_when_window_straddles_retention_rollout(self) -> None:
+        # pre-0.19 pull (no retention keys anywhere in the batch) for two days …
+        self._ingest([raw_row("a1", d, with_retention=False) for d in ("2026-08-10", "2026-08-11")],
+                     since="2026-08-10", until="2026-08-11")
+        # … then a 0.19 pull with thruplay for the third day
+        self._ingest([raw_row("a1", "2026-08-12")], since="2026-08-12", until="2026-08-12")
+        agg = {r["ad_id"]: r for r in store.aggregate_ads(self.conn, "2026-08-10", "2026-08-12")}
+        self.assertEqual(agg["a1"]["retention_days"], 1)
+        self.assertIsNone(agg["a1"]["hold_rate"])   # partial coverage → None, not 120/900
+        self.assertIsNone(agg["a1"]["thruplay"])
+        self.assertEqual(agg["a1"]["hook_rate"], 0.3)  # unaffected — video_view is always fetched
+        # restrict the window to the covered day → a real number
+        only = store.aggregate_ads(self.conn, "2026-08-12", "2026-08-12")[0]
+        self.assertEqual(only["hold_rate"], 0.4)
+
+    def test_zero_thruplay_day_in_a_retention_batch_counts_as_zero(self) -> None:
+        # Meta omits an empty action array: one day in a 0.19 batch has no thruplay key at all.
+        zero_day = raw_row("a1", "2026-08-11", with_retention=False)
+        self._ingest([raw_row("a1", "2026-08-10"), zero_day, raw_row("a1", "2026-08-12")])
+        rows = self.conn.execute(
+            "SELECT date, thruplay, retention_fetched FROM ad_day_metrics WHERE ad_id='a1' ORDER BY date").fetchall()
+        self.assertEqual([tuple(r) for r in rows],
+                         [("2026-08-10", 120, 1), ("2026-08-11", None, 1), ("2026-08-12", 120, 1)])
+        agg = store.aggregate_ads(self.conn, "2026-08-10", "2026-08-12")[0]
+        self.assertEqual(agg["retention_days"], 3)
+        self.assertEqual(agg["thruplay"], 240)
+        self.assertEqual(agg["hold_rate"], round(240 / 900, 4))
+
+    def test_db_file_is_owner_only(self) -> None:
+        mode = os.stat(self.db).st_mode & 0o777
+        self.assertEqual(mode, 0o600)
 
     # ── tag-once cache ────────────────────────────────────────────────────────
     def test_untagged_then_tagged_flow(self) -> None:

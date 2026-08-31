@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS ad_day_metrics (
   p75              INTEGER,
   p100             INTEGER,
   avg_watch_s      REAL,
+  retention_fetched INTEGER NOT NULL DEFAULT 0, -- 1 = the pull requested video_*_watched_actions,
+                                                --     so a NULL thruplay on this row means zero
   purchases        INTEGER,                  -- tier 5 only; v1 makes no revenue claim
   purchase_value   REAL,
   quality_ranking  TEXT,
@@ -106,8 +108,12 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 METRIC_COLUMNS = (
     "ad_id", "date", "account_id", "campaign_id", "campaign_name", "adset_id", "adset_name",
     "ad_name", "impressions", "reach", "frequency", "clicks", "spend", "video_view", "thruplay",
-    "p25", "p50", "p75", "p100", "avg_watch_s", "purchases", "purchase_value",
+    "p25", "p50", "p75", "p100", "avg_watch_s", "retention_fetched", "purchases", "purchase_value",
     "quality_ranking", "engagement_rate_ranking", "conversion_rate_ranking",
+)
+RETENTION_KEYS = (
+    "video_thruplay_watched_actions", "video_p25_watched_actions", "video_p50_watched_actions",
+    "video_p75_watched_actions", "video_p100_watched_actions", "video_avg_time_watched_actions",
 )
 
 
@@ -123,12 +129,15 @@ def connect(path: str | os.PathLike | None = None) -> sqlite3.Connection:
     p = db_path(path)
     p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     conn = sqlite3.connect(p)
-    conn.row_factory = sqlite3.Row
-    init_schema(conn)
     try:
-        os.chmod(p, 0o600)  # ad spend is sensitive — owner-only, like the CLI's data dir
+        os.chmod(p, 0o600)  # ad spend is sensitive — tighten BEFORE any write, not after schema init
     except OSError:
         pass
+    conn.row_factory = sqlite3.Row
+    # sync.py / backfill.py ingest while status/gap may read: wait briefly instead of
+    # raising "database is locked" on the first overlap.
+    conn.execute("PRAGMA busy_timeout = 5000")
+    init_schema(conn)
     return conn
 
 
@@ -170,12 +179,13 @@ def _retention(entries) -> float | None:
     if v is not None:
         return v
     guarded = _attr_guard(entries)
-    if guarded:
-        try:
-            return float(guarded[0].get("value"))
-        except (TypeError, ValueError):
-            return None
-    return None
+    val = guarded[0].get("value") if guarded else None
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
 
 
 def _int(v) -> int | None:
@@ -191,9 +201,21 @@ def _num(v, cast=float):
         return None
 
 
-def normalize_row(raw: dict) -> dict:
-    """Meta ad-level insights row (time_increment=1) → ad_day_metrics column dict."""
+def has_retention_keys(raw: dict) -> bool:
+    return any(k in raw for k in RETENTION_KEYS)
+
+
+def normalize_row(raw: dict, retention_fetched: bool | None = None) -> dict:
+    """Meta ad-level insights row (time_increment=1) → ad_day_metrics column dict.
+
+    `retention_fetched` is provenance, not data: Meta OMITS an action array when its value is
+    zero, so a missing thruplay key on one row is ambiguous (zero, or never requested?). The
+    ingest batch resolves it — if ANY row in the pull carries a retention key, the fields were
+    requested and every NULL in that batch is a true zero. Pass None to fall back to this row
+    alone (single-row callers)."""
     actions = raw.get("actions")
+    if retention_fetched is None:
+        retention_fetched = has_retention_keys(raw)
     return {
         "ad_id": str(raw["ad_id"]),
         "date": raw["date_start"],
@@ -215,6 +237,7 @@ def normalize_row(raw: dict) -> dict:
         "p75": _int(_retention(raw.get("video_p75_watched_actions"))),
         "p100": _int(_retention(raw.get("video_p100_watched_actions"))),
         "avg_watch_s": _retention(raw.get("video_avg_time_watched_actions")),
+        "retention_fetched": 1 if retention_fetched else 0,
         "purchases": _int(_first(actions, ("omni_purchase", "purchase"))),
         "purchase_value": _first(raw.get("action_values"), ("omni_purchase", "purchase")),
         "quality_ranking": raw.get("quality_ranking"),
@@ -254,14 +277,19 @@ def upsert_ads(conn: sqlite3.Connection, rows: list[dict]) -> list[str]:
         chunk = ids[i:i + 500]
         q = f"SELECT ad_id FROM ads WHERE ad_id IN ({','.join('?' * len(chunk))})"
         existing.update(r[0] for r in conn.execute(q, chunk))
-    latest: dict[str, dict] = {}
-    for r in rows:  # keep the most recent day's naming per ad
-        cur = latest.get(r["ad_id"])
-        if cur is None or r["date"] > cur["date"]:
-            latest[r["ad_id"]] = r
+    # One pass: per ad, the newest row supplies naming; min/max date supply the seen range.
+    per_ad: dict[str, dict] = {}
+    for r in rows:
+        cur = per_ad.get(r["ad_id"])
+        if cur is None:
+            per_ad[r["ad_id"]] = {**r, "first_seen": r["date"], "last_seen": r["date"]}
+        else:
+            if r["date"] > cur["last_seen"]:
+                cur.update(r, last_seen=r["date"])
+            cur["first_seen"] = min(cur["first_seen"], r["date"])
     conn.executemany(
         """INSERT INTO ads (ad_id, ad_name, campaign_id, campaign_name, adset_id, first_seen, last_seen)
-           VALUES (:ad_id, :ad_name, :campaign_id, :campaign_name, :adset_id, :date, :date)
+           VALUES (:ad_id, :ad_name, :campaign_id, :campaign_name, :adset_id, :first_seen, :last_seen)
            ON CONFLICT(ad_id) DO UPDATE SET
              -- naming follows the newest day only: backfill chunks land in any order, and an
              -- older window must not clobber a rename already recorded from a newer one
@@ -271,12 +299,7 @@ def upsert_ads(conn: sqlite3.Connection, rows: list[dict]) -> list[str]:
              adset_id      = CASE WHEN excluded.last_seen >= ads.last_seen THEN excluded.adset_id      ELSE ads.adset_id      END,
              first_seen=MIN(ads.first_seen, excluded.first_seen),
              last_seen=MAX(ads.last_seen, excluded.last_seen)""",
-        list(latest.values()),
-    )
-    # first_seen must reflect the earliest metrics date, not the latest row we happened to insert
-    conn.executemany(
-        "UPDATE ads SET first_seen = MIN(first_seen, ?) WHERE ad_id = ?",
-        [(r["date"], r["ad_id"]) for r in rows],
+        list(per_ad.values()),
     )
     return [i for i in ids if i not in existing]
 
@@ -296,7 +319,8 @@ def load_daily_file(path: str | os.PathLike) -> list[dict]:
 
 def ingest_daily(conn: sqlite3.Connection, raw_rows: list[dict], since: str, until: str) -> IngestResult:
     """One transaction: metrics upsert + ads roster + fetch_log. Idempotent."""
-    rows = [normalize_row(r) for r in raw_rows]
+    retention = any(has_retention_keys(r) for r in raw_rows)  # batch provenance, see normalize_row
+    rows = [normalize_row(r, retention_fetched=retention) for r in raw_rows]
     now = _now()
     with conn:
         upsert_metrics(conn, rows, now)
@@ -329,13 +353,17 @@ def catch_up_window(conn: sqlite3.Connection, today: str | None = None,
 # ── reads for the analysis step ───────────────────────────────────────────────
 def aggregate_ads(conn: sqlite3.Connection, since: str, until: str) -> list[dict]:
     """Per-ad sums over [since, until] plus hook_rate (video_view ÷ impressions) and
-    hold_rate (thruplay ÷ video_view). Rates are None when the denominator is 0 or the
-    numerator was never fetched (pre-0.19 rows have no thruplay) — never 0."""
+    hold_rate (thruplay ÷ video_view). Never 0 by accident:
+      - hook_rate is None when impressions are 0 or the ad never logged a video_view (image ads).
+        video_view lives in `actions`, which every pull requests, so a NULL day IS zero.
+      - hold_rate is None when video_view is 0 OR any day in the window has
+        retention_fetched=0 (pre-0.19 pull): a partial SUM would silently understate it.
+        With full coverage NULL thruplay days are zeros (Meta omits empty action arrays)."""
     q = """
       SELECT m.ad_id, a.ad_name, a.campaign_name, a.creative_id, a.asset_hash,
-             COUNT(*) AS days,
+             COUNT(*) AS days, SUM(m.retention_fetched) AS retention_days,
              SUM(m.impressions) AS impressions, SUM(m.clicks) AS clicks, SUM(m.spend) AS spend,
-             SUM(m.video_view) AS video_view, SUM(m.thruplay) AS thruplay,
+             SUM(m.video_view) AS video_view, SUM(COALESCE(m.thruplay, 0)) AS thruplay,
              SUM(m.p25) AS p25, SUM(m.p50) AS p50, SUM(m.p75) AS p75, SUM(m.p100) AS p100,
              SUM(m.purchases) AS purchases, SUM(m.purchase_value) AS purchase_value
       FROM ad_day_metrics m LEFT JOIN ads a USING (ad_id)
@@ -345,7 +373,10 @@ def aggregate_ads(conn: sqlite3.Connection, since: str, until: str) -> list[dict
     for r in conn.execute(q, (since, until)):
         d = dict(r)
         d["hook_rate"] = _ratio(d["video_view"], d["impressions"])
-        d["hold_rate"] = _ratio(d["thruplay"], d["video_view"])
+        full_coverage = d["retention_days"] == d["days"]
+        if not full_coverage:
+            d["thruplay"] = None  # don't hand a partial sum downstream either
+        d["hold_rate"] = _ratio(d["thruplay"], d["video_view"]) if full_coverage else None
         out.append(d)
     return out
 
