@@ -392,15 +392,17 @@ def untagged_ads(conn: sqlite3.Connection, since: str | None = None, *,
     """Ads with no cached tags. Optional `since` limits to ads seen on/after that date.
 
     need=None           → no asset_hash yet (video never fetched) OR no creative_tags row.
-    need="tags"         → asset fetched but Gemini tags missing (row absent or tags_json NULL);
-    need="deterministic"→ same for deterministic_json. The per-producer forms exist because
+    need="tags"         → video fetched but Gemini tags missing (row absent or tags_json NULL);
+    need="deterministic"→ same for deterministic_json. Both require video_path. The per-producer forms exist because
     upsert_tags allows partial rows: a deterministic-only row must not hide an ad from Gemini.
     retry_failed=True (need="tags" only) also returns rows flagged {"tag_failed": true}."""
     if need is None:
         cond = "(a.asset_hash IS NULL OR t.asset_hash IS NULL)"
     elif need in ("tags", "deterministic"):
         col = "t.tags_json" if need == "tags" else "t.deterministic_json"
-        cond = f"a.asset_hash IS NOT NULL AND (t.asset_hash IS NULL OR {col} IS NULL"
+        # video_path required: image ads and unavailable assets carry a hash (so they stop being
+        # fetch candidates) but have nothing a video tagger can consume.
+        cond = f"a.asset_hash IS NOT NULL AND a.video_path IS NOT NULL AND (t.asset_hash IS NULL OR {col} IS NULL"
         if need == "tags" and retry_failed:
             cond += " OR json_extract(t.tags_json, '$.tag_failed') = 1"
         cond += ")"
