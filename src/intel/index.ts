@@ -70,9 +70,10 @@ export function registerIntelCommands(program: Command): void {
     .description('Scriptable ad×daily metrics pull for a date range (backfill / catch-up)')
     .option('--since <date>', 'Start date (YYYY-MM-DD)')
     .option('--until <date>', 'End date (YYYY-MM-DD)')
+    .option('--keep-video', 'Also retain each current ad\'s source video (audio+motion) for tagging')
     .option('--access-token <token>', 'Access token')
     .addOption(new Option('-o, --output <format>', 'Output format').choices(['json', 'table', 'csv']).default('json'))
-    .action(async (opts: { since?: string; until?: string; accessToken?: string; output: OutputFormat }) => {
+    .action(async (opts: { since?: string; until?: string; keepVideo?: boolean; accessToken?: string; output: OutputFormat }) => {
       // Boundary validation → usage errors (exit 2), mirroring `insights get`.
       if (!opts.since || !opts.until) {
         printError({ code: 'USAGE', message: '--since and --until are both required (YYYY-MM-DD)' }, opts.output);
@@ -88,7 +89,7 @@ export function registerIntelCommands(program: Command): void {
         process.exit(EXIT_USAGE);
       }
       try {
-        const result = await fetchDaily({ since: opts.since, until: opts.until, accessToken: opts.accessToken });
+        const result = await fetchDaily({ since: opts.since, until: opts.until, keepVideo: opts.keepVideo, accessToken: opts.accessToken });
         printOutput(result as unknown as Record<string, unknown>, opts.output);
       } catch (error) {
         handleCommandError(error, opts.output);

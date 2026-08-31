@@ -584,6 +584,21 @@ export interface AdCreativeRow {
   };
 }
 
+/**
+ * creatives-master.json row — the nested `creative{...}` flattened to the same
+ * shape `ads list` emits. Produced by fetchAdCreatives (pull.ts), consumed as
+ * the ad_id → creative_id lookup that analyzeCreatives requires.
+ */
+export interface AdCreativeFlat {
+  id: string;
+  name: string | undefined;
+  creative_id: string;
+  creative_body: string;
+  creative_title: string;
+  creative_image_url: string;
+  creative_thumbnail_url: string;
+}
+
 /** pipeline-status.json — status, files_produced, files_skipped, warnings */
 export interface PipelineStatus {
   status: 'complete' | 'partial';
