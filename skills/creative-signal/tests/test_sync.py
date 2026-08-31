@@ -53,6 +53,9 @@ class ChunkingTest(unittest.TestCase):
         self.assertEqual(sync.chunk_windows("2026-08-31", "2026-08-31"), [("2026-08-31", "2026-08-31")])
         with self.assertRaises(ValueError):
             sync.chunk_windows("2026-09-01", "2026-08-31")
+        for bad in (0, -5):  # must fail fast, not loop forever
+            with self.assertRaises(ValueError):
+                sync.chunk_windows("2026-01-01", "2026-01-31", bad)
 
     def test_months_ago_clamps_to_month_end(self) -> None:
         self.assertEqual(backfill.months_ago("2026-08-31", 6), "2026-02-28")
@@ -166,6 +169,10 @@ if mode == "auth":
     sys.stderr.write(json.dumps({"error": "AUTH", "message": "No access token found.", "hint": "run meta-ads auth login"}, indent=2) + "\n"); sys.exit(1)
 if mode == "garbage":
     sys.stdout.write("not json\n"); sys.exit(0)
+if mode == "crash":
+    sys.stderr.write("TypeError: cannot read properties of undefined\n    at pull (dist/index.js:1:2)\n"); sys.exit(1)
+if mode == "hang":
+    import time; time.sleep(30)
 i = sys.argv.index("--since"); since = sys.argv[i + 1]; until = sys.argv[sys.argv.index("--until") + 1]
 out = os.path.join(os.environ["FAKE_OUT"], f"ads-daily-{since}.json")
 open(out, "w").write(json.dumps({"data": [{"ad_id": "fake1", "date_start": until, "date_stop": until, "impressions": "10"}]}))
@@ -227,6 +234,20 @@ class RunFetchDailyTest(unittest.TestCase):
         os.environ["FAKE_MODE"] = "garbage"
         with self.assertRaises(sync.FetchError):
             sync.run_fetch_daily("2026-08-01", "2026-08-07")
+
+    def test_non_json_stderr_falls_back_to_raw_tail(self) -> None:
+        os.environ["FAKE_MODE"] = "crash"
+        with self.assertRaises(sync.FetchError) as cm:
+            sync.run_fetch_daily("2026-08-01", "2026-08-07")
+        msg = str(cm.exception)
+        self.assertTrue(msg.startswith("fetch-daily exited 1: "), msg)
+        self.assertIn("cannot read properties of undefined", msg)
+
+    def test_hung_cli_is_killed_after_timeout(self) -> None:
+        os.environ["FAKE_MODE"] = "hang"
+        with self.assertRaises(sync.FetchError) as cm:
+            sync.run_fetch_daily("2026-08-01", "2026-08-07", timeout_s=0.5)
+        self.assertIn("exceeded 0.5s", str(cm.exception))
 
     def test_missing_binary_is_a_clear_error(self) -> None:
         os.environ["META_ADS_BIN"] = str(self.tmp / "nope")

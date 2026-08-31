@@ -40,6 +40,9 @@ CHUNK_DAYS = 30                 # Meta async ad×day reports stay well under row
 LOCK_MARKER = "Another pull instance is running"
 LOCK_RETRIES = 10               # × LOCK_WAIT_S = 5 min: long enough for a concurrent `intel run` to finish
 LOCK_WAIT_S = 30
+# Per-chunk ceiling. The CLI bounds its own async-report polling, so this only fires if the
+# process itself wedges (network hang, stuck child). 30-day ad×day reports finish in minutes.
+FETCH_TIMEOUT_S = 30 * 60
 EXIT_NEEDS_BACKFILL = 3
 
 
@@ -54,6 +57,8 @@ def meta_ads_bin() -> str:
 
 def chunk_windows(since: str, until: str, chunk_days: int = CHUNK_DAYS) -> list[tuple[str, str]]:
     """Inclusive [since, until] → consecutive inclusive chunks of ≤ chunk_days."""
+    if chunk_days < 1:
+        raise ValueError(f"chunk_days must be ≥ 1 (got {chunk_days})")  # 0 would never advance the loop
     s, u = date.fromisoformat(since), date.fromisoformat(until)
     if s > u:
         raise ValueError(f"since {since} is after until {until}")
@@ -67,7 +72,7 @@ def chunk_windows(since: str, until: str, chunk_days: int = CHUNK_DAYS) -> list[
 
 def run_fetch_daily(since: str, until: str, *, keep_video: bool = False,
                     lock_retries: int = LOCK_RETRIES, lock_wait_s: float = LOCK_WAIT_S,
-                    runner: Callable = subprocess.run) -> dict:
+                    timeout_s: float = FETCH_TIMEOUT_S, runner: Callable = subprocess.run) -> dict:
     """Invoke `meta-ads intel fetch-daily` and return its JSON result (has `file`, `rows`).
 
     A `.pull-lock` collision (another intel run in flight) is expected, not fatal: wait and
@@ -80,7 +85,10 @@ def run_fetch_daily(since: str, until: str, *, keep_video: bool = False,
         raise FetchError(f"{argv[0]} not found on PATH — onboarding installs it with: npm i -g meta-ads@^0.19")
     attempt = 0
     while True:
-        cp = runner(argv, capture_output=True, text=True)
+        try:
+            cp = runner(argv, capture_output=True, text=True, timeout=timeout_s)
+        except subprocess.TimeoutExpired as e:
+            raise FetchError(f"fetch-daily {since} → {until} exceeded {timeout_s:g}s and was killed") from e
         if cp.returncode == 0:
             try:
                 return json.loads(cp.stdout)
