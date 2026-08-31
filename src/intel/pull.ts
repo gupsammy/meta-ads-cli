@@ -146,8 +146,13 @@ function isCacheFresh(filePath: string, maxAgeMs: number): boolean {
   }
 }
 
-/** Atomic directory-based lock. Throws if lock already held. */
-function acquireLock(dataDir: string): string {
+/**
+ * Atomic directory-based lock on <dataDir>/.pull-lock. Throws if already held.
+ * Shared by pull() and fetchDaily(): both write under dataDir and the sibling
+ * creatives/ dir, so a concurrent `intel run` and `intel fetch-daily` must
+ * serialize (the --keep-video swap of creatives/ is the destructive case).
+ */
+export function acquireLock(dataDir: string): string {
   const lockDir = path.join(dataDir, '.pull-lock');
 
   // Remove stale lock (>30 min old)
@@ -172,7 +177,7 @@ function acquireLock(dataDir: string): string {
   return lockDir;
 }
 
-function releaseLock(lockDir: string): void {
+export function releaseLock(lockDir: string): void {
   try { fs.rmdirSync(lockDir); } catch { /* already removed or doesn't exist */ }
 }
 

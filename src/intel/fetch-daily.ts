@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { homedir } from 'node:os';
 import { fetchInsightsAsync } from '../lib/http.js';
 import { resolveAccessToken } from '../auth.js';
-import { AD_INSIGHT_FIELDS, resolveIntelAccountId, fetchAdCreatives } from './pull.js';
+import { AD_INSIGHT_FIELDS, resolveIntelAccountId, fetchAdCreatives, acquireLock, releaseLock } from './pull.js';
 import { analyzeCreatives } from './creatives.js';
 import { hasFfmpeg } from './run.js';
 import type { CreativeMediaEntry } from './types.js';
@@ -144,8 +144,12 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
   // Ad spend data is sensitive — restrict file permissions (matches pull()).
   let oldUmask: number | undefined;
   try { oldUmask = process.umask(0o077); } catch { /* worker thread */ }
+  let lockDir: string | undefined;
   try {
     fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    // Same .pull-lock as `intel run`: a scheduled fetch-daily must not race a
+    // concurrent pull on the shared dataDir / creatives/ dir.
+    lockDir = acquireLock(dataDir);
 
     const { accountId } = resolveIntelAccountId(skillConfigPath);
     const token = options.accessToken ?? resolveAccessToken();
@@ -199,6 +203,7 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
       ...(creatives ? { creatives } : {}),
     };
   } finally {
+    if (lockDir) releaseLock(lockDir);
     if (oldUmask !== undefined) { try { process.umask(oldUmask); } catch { /* ok */ } }
   }
 }
