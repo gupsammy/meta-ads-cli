@@ -110,6 +110,28 @@ describe('fetchDaily', () => {
     expect(written.data).toHaveLength(3);
   });
 
+  it('takes .pull-lock for the duration of the run and releases it after', async () => {
+    mockRows();
+    const lockDir = path.join(dataDir, '.pull-lock');
+    mockFetchAsync.mockImplementationOnce(async () => {
+      expect(fs.existsSync(lockDir)).toBe(true); // held while the report runs
+      return { data: [], has_more: false };
+    });
+    await fetchDaily({ since: '2026-01-01', until: '2026-01-02', dataDir });
+    expect(fs.existsSync(lockDir)).toBe(false);
+  });
+
+  it('refuses to run while another pull holds .pull-lock (and leaves it in place)', async () => {
+    mockRows();
+    fs.mkdirSync(dataDir, { recursive: true });
+    const lockDir = path.join(dataDir, '.pull-lock');
+    fs.mkdirSync(lockDir);
+    await expect(fetchDaily({ since: '2026-01-01', until: '2026-01-02', dataDir }))
+      .rejects.toThrow(/Another pull instance is running/);
+    expect(mockFetchAsync).not.toHaveBeenCalled();
+    expect(fs.existsSync(lockDir)).toBe(true); // not ours to release
+  });
+
   it('resolves account from META_ADS_ACCOUNT_ID and normalizes the act_ prefix', async () => {
     process.env['META_ADS_ACCOUNT_ID'] = '999888'; // no act_ prefix
     mockRows();
