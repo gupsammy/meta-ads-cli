@@ -117,7 +117,7 @@ describe('fetchDaily', () => {
       expect(fs.existsSync(lockDir)).toBe(true); // held while the report runs
       return { data: [], has_more: false };
     });
-    await fetchDaily({ since: '2026-01-01', until: '2026-01-02', dataDir });
+    await fetchDaily({ since: '2026-01-01', until: '2026-01-02', dataDir, accessToken: 'tok' });
     expect(fs.existsSync(lockDir)).toBe(false);
   });
 
@@ -126,7 +126,7 @@ describe('fetchDaily', () => {
     fs.mkdirSync(dataDir, { recursive: true });
     const lockDir = path.join(dataDir, '.pull-lock');
     fs.mkdirSync(lockDir);
-    await expect(fetchDaily({ since: '2026-01-01', until: '2026-01-02', dataDir }))
+    await expect(fetchDaily({ since: '2026-01-01', until: '2026-01-02', dataDir, accessToken: 'tok' }))
       .rejects.toThrow(/Another pull instance is running/);
     expect(mockFetchAsync).not.toHaveBeenCalled();
     expect(fs.existsSync(lockDir)).toBe(true); // not ours to release
@@ -225,6 +225,19 @@ describe('fetchDaily', () => {
       // Truncation notice + the analyzeCreatives per-ad warning both surface in the summary.
       expect(result.creatives?.warnings?.some(w => /500/.test(w))).toBe(true);
       expect(result.creatives?.warnings).toContain('API error for ad ad3: boom');
+    });
+
+    it('returns the metrics result (no creatives) when the video step throws', async () => {
+      mockRows();
+      mockCreatives([{ id: 'ad1', name: 'A', creative: { id: 'c1' } }]);
+      mockAnalyze.mockRejectedValue(new Error('rename EBUSY: creatives swap failed'));
+
+      const result = await fetchDaily({ since: '2026-05-01', until: '2026-05-02', dataDir, keepVideo: true, accessToken: 'tok' });
+
+      expect(result.rows).toBe(1);
+      expect(fs.existsSync(result.file)).toBe(true);
+      expect(result.creatives).toBeUndefined();
+      expect(fs.existsSync(path.join(dataDir, '.pull-lock'))).toBe(false); // lock still released
     });
 
     it('skips retention (but keeps metrics) when the account has no current creatives', async () => {

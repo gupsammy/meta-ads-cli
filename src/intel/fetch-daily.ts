@@ -188,10 +188,19 @@ export async function fetchDaily(options: FetchDailyOptions): Promise<FetchDaily
     writeJson(file, { data: result.data });
 
     // Optional: retain current source videos for tagging. Runs AFTER metrics are
-    // safely on disk so a video-step failure never costs the metrics pull.
-    const creatives = options.keepVideo
-      ? await retainCreativeVideos(accountId, token, dataDir, runDir)
-      : undefined;
+    // safely on disk so a video-step failure never costs the metrics pull — any
+    // throw from the creatives fetch or the dir swap is downgraded to a warning
+    // and the metrics result is still returned (creatives omitted).
+    let creatives: FetchDailyResult['creatives'];
+    if (options.keepVideo) {
+      try {
+        creatives = await retainCreativeVideos(accountId, token, dataDir, runDir);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`warning: --keep-video retention failed, metrics pull unaffected: ${msg}`);
+        creatives = undefined;
+      }
+    }
 
     return {
       run_dir: runDir,
