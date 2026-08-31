@@ -107,6 +107,16 @@ class ValidateTest(unittest.TestCase):
             with self.assertRaises(tg.TagError):
                 tg.parse_response_text(bad)
 
+    def test_prompt_names_every_enum_value(self):
+        # ENUMS is the schema truth; PROMPT hand-describes the same values. A rename in one
+        # without the other would send the model a schema demanding a value the prose never mentions.
+        for k, allowed in tg.ENUMS.items():
+            self.assertIn(k, tg.PROMPT)
+            for v in allowed:
+                self.assertIn(v, tg.PROMPT, f"{k} value {v!r} missing from PROMPT")
+        for k in (*tg.BOOLS, *tg.TEXTS):
+            self.assertIn(k, tg.PROMPT)
+
     def test_schema_matches_taxonomy(self):
         self.assertEqual(set(tg.RESPONSE_SCHEMA["required"]), set(tg.TAG_KEYS))
         for k, allowed in tg.ENUMS.items():
@@ -277,7 +287,8 @@ class TagUntaggedTest(unittest.TestCase):
         self.assertEqual(res.tagged, ["h3"])
         self.assertEqual(res.failed, [])
         self.assertIsNone(store.get_tags(self.conn, "h1"), "quota trouble must not poison the cache")
-        self.assertEqual(res.errors[0]["ad_id"], "a1")
+        self.assertEqual([e["ad_id"] for e in res.errors], ["a1", "a2"], "sibling a2 is reported, not counted as shared")
+        self.assertEqual(res.shared, 0)
         self.assertEqual(len(store.untagged_ads(self.conn, need="tags")), 3, "a1, a2 (h1) + a4 remain")
 
     def test_max_caps_calls_and_dry_run_writes_nothing(self):

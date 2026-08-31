@@ -334,7 +334,11 @@ def tag_untagged(conn, client=None, *, since: str | None = None, max_ads: int = 
     for ad in ads:
         h, vp = ad["asset_hash"], ad.get("video_path")
         if h in done:
-            res.shared += 1
+            if done[h] == "error":   # sibling of an asset whose call failed: nothing covers it
+                res.errors.append({"ad_id": ad["ad_id"], "asset_hash": h,
+                                   "error": "not attempted — earlier call for this asset failed"})
+            else:
+                res.shared += 1      # covered by this run's tags / tag_failed row
             continue
         if not vp or not Path(vp).is_file():
             res.skipped.append({"ad_id": ad["ad_id"], "reason": f"video missing: {vp or '(no path)'} — re-run fetch_assets"})
