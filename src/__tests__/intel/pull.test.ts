@@ -210,6 +210,36 @@ describe('pull', () => {
       expect(dailyCall?.[2]?.params?.time_increment).toBe('1');
       expect(dailyCall?.[2]?.params?.filtering).toContain('ACTIVE');
     });
+
+    it('requests video retention fields on both ad-level pulls but not campaign/adset', async () => {
+      writeConfig();
+      setupMocks();
+
+      await pull({ dataDir, configPath, datePreset: 'last_7d' });
+
+      const retentionFields = [
+        'video_thruplay_watched_actions',
+        'video_p25_watched_actions',
+        'video_p100_watched_actions',
+        'video_avg_time_watched_actions',
+      ];
+
+      // Sync ad-level pull (ads.json) requests the retention fields.
+      const adCall = mockPaginateAll.mock.calls.find(
+        c => c[0].includes('/insights') && c[2]?.params?.level === 'ad',
+      );
+      for (const f of retentionFields) expect(adCall?.[2]?.params?.fields).toContain(f);
+
+      // Async ad-daily pull (ads-daily.json) — the hook/hold-rate source — too.
+      const dailyCall = mockFetchAsync.mock.calls[0];
+      for (const f of retentionFields) expect(dailyCall?.[2]?.params?.fields).toContain(f);
+
+      // Campaign pull stays lean — no video quartile fields at that level.
+      const campaignCall = mockPaginateAll.mock.calls.find(
+        c => c[0].includes('/insights') && c[2]?.params?.level === 'campaign',
+      );
+      expect(campaignCall?.[2]?.params?.fields).not.toContain('video_p25_watched_actions');
+    });
   });
 
   describe('account ID resolution', () => {

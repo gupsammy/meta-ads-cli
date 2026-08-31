@@ -6,7 +6,7 @@ import { resolveAccessToken } from '../auth.js';
 import { ConfigManager } from '../lib/config.js';
 import { summarize } from './summarize.js';
 import { prepare } from './prepare/index.js';
-import type { PipelineStatus, AdCreativeRow, RecommendationsData } from './types.js';
+import type { PipelineStatus, AdCreativeRow, AdCreativeFlat, RecommendationsData } from './types.js';
 
 // Same fields as src/commands/insights.ts — duplicated here to avoid coupling
 // pull's API contract to the CLI command's display fields.
@@ -15,10 +15,51 @@ const INSIGHT_FIELDS =
   'impressions,clicks,spend,cpc,cpm,ctr,reach,frequency,' +
   'actions,action_values,cost_per_action_type,purchase_roas,date_start,date_stop';
 
-// Ad-level insight fields include diagnostic rankings (only meaningful at ad level — not campaign/adset)
-const AD_INSIGHT_FIELDS = INSIGHT_FIELDS + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking';
+// Ad-level insight fields add (a) diagnostic rankings and (b) video retention
+// metrics — both only meaningful at ad level (creative signals), not campaign/adset.
+// Retention drives hook-rate (3s-view ÷ impressions) and hold-rate (thruplay ÷ 3s-view):
+// video_view (3s views) already arrives via `actions`, so we add the thruplay,
+// quartile (p25–p100), and average-watch-time fields the base list omits. Kept off
+// the campaign/adset pulls to keep those requests lean and dodge level-rejection.
+export const AD_INSIGHT_FIELDS = INSIGHT_FIELDS
+  + ',quality_ranking,engagement_rate_ranking,conversion_rate_ranking'
+  + ',video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions'
+  + ',video_p75_watched_actions,video_p100_watched_actions,video_avg_time_watched_actions';
 
 const PULL_LIMIT = 500;
+
+/**
+ * Fetch the account's ads with their creative, flattened to the ads-list shape
+ * that creatives-master.json uses. Shared by pull() (the full run) and
+ * fetch-daily --keep-video, so the creative field set — and the truncation
+ * signal — stay in lockstep across both entry points. Capped at PULL_LIMIT like
+ * every other master pull; pass `warnings` to receive the at-cap truncation
+ * notice (silently omitted when the array is not provided).
+ */
+export async function fetchAdCreatives(
+  accountId: string,
+  token: string,
+  warnings?: string[],
+  limit: number = PULL_LIMIT,
+): Promise<AdCreativeFlat[]> {
+  const result = await paginateAll<AdCreativeRow>(
+    `/${accountId}/ads`,
+    token,
+    { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}' } },
+    limit,
+  );
+  const flat = result.data.map(a => ({
+    id: a.id,
+    name: a.name,
+    creative_id: a.creative?.id ?? '',
+    creative_body: a.creative?.body ?? '',
+    creative_title: a.creative?.title ?? '',
+    creative_image_url: a.creative?.image_url ?? '',
+    creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
+  }));
+  if (warnings) checkTruncation(flat.length, 'ad creatives', limit, warnings);
+  return flat;
+}
 
 // Scope the AD-LEVEL pulls to currently-delivering ads. Meta's synchronous
 // /insights edge rejects ad-level × daily over a full account with error code 1
@@ -62,7 +103,7 @@ function writeJson(filePath: string, data: unknown): void {
  * 2. Skill config → .account_id
  * 3. CLI config → .defaults.account_id
  */
-function resolveIntelAccountId(skillConfigPath: string): { accountId: string; source: string } {
+export function resolveIntelAccountId(skillConfigPath: string): { accountId: string; source: string } {
   // Step 1: env var
   const envVal = process.env['META_ADS_ACCOUNT_ID'];
   if (envVal) {
@@ -105,8 +146,13 @@ function isCacheFresh(filePath: string, maxAgeMs: number): boolean {
   }
 }
 
-/** Atomic directory-based lock. Throws if lock already held. */
-function acquireLock(dataDir: string): string {
+/**
+ * Atomic directory-based lock on <dataDir>/.pull-lock. Throws if already held.
+ * Shared by pull() and fetchDaily(): both write under dataDir and the sibling
+ * creatives/ dir, so a concurrent `intel run` and `intel fetch-daily` must
+ * serialize (the --keep-video swap of creatives/ is the destructive case).
+ */
+export function acquireLock(dataDir: string): string {
   const lockDir = path.join(dataDir, '.pull-lock');
 
   // Remove stale lock (>30 min old)
@@ -131,7 +177,7 @@ function acquireLock(dataDir: string): string {
   return lockDir;
 }
 
-function releaseLock(lockDir: string): void {
+export function releaseLock(lockDir: string): void {
   try { fs.rmdirSync(lockDir); } catch { /* already removed or doesn't exist */ }
 }
 
@@ -306,24 +352,8 @@ export async function pull(options?: PullOptions): Promise<PullResult> {
     // Creatives — 24h TTL
     const creativesMasterPath = path.join(dataDir, 'creatives-master.json');
     if (!isCacheFresh(creativesMasterPath, 24 * 60 * 60 * 1000)) {
-      const creativesResult = await paginateAll<AdCreativeRow>(
-        `/${accountId}/ads`,
-        token,
-        { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}' } },
-        PULL_LIMIT,
-      );
-      // Flatten nested creative fields to match ads list CLI output format
-      const flatData = creativesResult.data.map(a => ({
-        id: a.id,
-        name: a.name,
-        creative_id: a.creative?.id ?? '',
-        creative_body: a.creative?.body ?? '',
-        creative_title: a.creative?.title ?? '',
-        creative_image_url: a.creative?.image_url ?? '',
-        creative_thumbnail_url: a.creative?.thumbnail_url ?? '',
-      }));
+      const flatData = await fetchAdCreatives(accountId, token, warnings);
       writeJson(creativesMasterPath, { data: flatData });
-      checkTruncation(creativesResult.data.length, 'ad creatives', PULL_LIMIT, warnings);
     }
     forceSymlink(creativesMasterPath, path.join(rawDir, 'creatives.json'));
 

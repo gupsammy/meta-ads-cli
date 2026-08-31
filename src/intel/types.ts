@@ -584,6 +584,21 @@ export interface AdCreativeRow {
   };
 }
 
+/**
+ * creatives-master.json row — the nested `creative{...}` flattened to the same
+ * shape `ads list` emits. Produced by fetchAdCreatives (pull.ts), consumed as
+ * the ad_id → creative_id lookup that analyzeCreatives requires.
+ */
+export interface AdCreativeFlat {
+  id: string;
+  name: string | undefined;
+  creative_id: string;
+  creative_body: string;
+  creative_title: string;
+  creative_image_url: string;
+  creative_thumbnail_url: string;
+}
+
 /** pipeline-status.json — status, files_produced, files_skipped, warnings */
 export interface PipelineStatus {
   status: 'complete' | 'partial';
@@ -632,12 +647,16 @@ export interface CreativeManifestEntry {
   frames: string[];
   frame_count: number;
   artifacts_dir: string;
+  /** Absolute path to the retained source video (audio+motion), present only when analysis ran with keepVideo. */
+  video_path?: string;
 }
 
 export interface AnalyzeCreativesOptions {
   inputFile: string;
   dataDir?: string;
   accessToken?: string;
+  /** Retain the source video file (raw original, with audio) per ad instead of deleting it after frame extraction. */
+  keepVideo?: boolean;
 }
 
 export interface AnalyzeCreativesResult {
