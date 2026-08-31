@@ -387,11 +387,27 @@ def _ratio(num, den) -> float | None:
     return round(num / den, 4)
 
 
-def untagged_ads(conn: sqlite3.Connection, since: str | None = None) -> list[dict]:
-    """Ads with no cached tags: either no asset_hash yet (video never fetched) or a hash
-    with no creative_tags row. Optional `since` limits to ads seen on/after that date."""
-    q = """SELECT a.* FROM ads a LEFT JOIN creative_tags t ON t.asset_hash = a.asset_hash
-           WHERE (a.asset_hash IS NULL OR t.asset_hash IS NULL)"""
+def untagged_ads(conn: sqlite3.Connection, since: str | None = None, *,
+                 need: str | None = None, retry_failed: bool = False) -> list[dict]:
+    """Ads with no cached tags. Optional `since` limits to ads seen on/after that date.
+
+    need=None           → no asset_hash yet (video never fetched) OR no creative_tags row.
+    need="tags"         → asset fetched but Gemini tags missing (row absent or tags_json NULL);
+    need="deterministic"→ same for deterministic_json. The per-producer forms exist because
+    upsert_tags allows partial rows: a deterministic-only row must not hide an ad from Gemini.
+    retry_failed=True (need="tags" only) also returns rows flagged {"tag_failed": true}."""
+    if need is None:
+        cond = "(a.asset_hash IS NULL OR t.asset_hash IS NULL)"
+    elif need in ("tags", "deterministic"):
+        col = "t.tags_json" if need == "tags" else "t.deterministic_json"
+        cond = f"a.asset_hash IS NOT NULL AND (t.asset_hash IS NULL OR {col} IS NULL"
+        if need == "tags" and retry_failed:
+            cond += " OR json_extract(t.tags_json, '$.tag_failed') = 1"
+        cond += ")"
+    else:
+        raise ValueError(f"need must be None, 'tags' or 'deterministic', got {need!r}")
+    q = f"""SELECT a.* FROM ads a LEFT JOIN creative_tags t ON t.asset_hash = a.asset_hash
+            WHERE {cond}"""
     args: tuple = ()
     if since:
         q += " AND a.last_seen >= ?"
