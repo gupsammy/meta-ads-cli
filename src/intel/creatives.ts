@@ -196,10 +196,12 @@ async function processVideoAd(
     return;
   }
 
-  // Transcode: 480px wide, 300k bitrate, no audio, max 60s
+  // Transcode: 480px wide, 300k bitrate, no audio, max 60s. Height is scale=-2
+  // (nearest even value), not -1: libx264 rejects an odd height, which every
+  // vertical 9:16 ad (480w → 853h) would otherwise hit, failing the transcode.
   try {
     execFileSync('ffmpeg', [
-      '-i', rawPath, '-vf', 'scale=480:-1', '-b:v', '300k',
+      '-i', rawPath, '-vf', 'scale=480:-2', '-b:v', '300k',
       '-an', '-t', '60', '-y', '-loglevel', 'error', videoPath,
     ], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 120_000 });
     // Keep the raw original when retaining video — the _video.mp4 transcode is
@@ -232,7 +234,7 @@ async function processVideoAd(
   const interval = Math.max(0.5, meta.duration / Math.max(1, MAX_FRAMES - 1));
   try {
     execFileSync('ffmpeg', [
-      '-i', videoPath, '-vf', `fps=1/${interval},scale=480:-1`,
+      '-i', videoPath, '-vf', `fps=1/${interval},scale=480:-2`,
       '-vframes', String(MAX_FRAMES), '-y', '-loglevel', 'error',
       path.join(adDir, 'frame_%02d.png'),
     ], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
@@ -242,7 +244,7 @@ async function processVideoAd(
   try {
     execFileSync('ffmpeg', [
       '-sseof', '-0.3', '-i', videoPath, '-vframes', '1',
-      '-vf', 'scale=480:-1', '-y', '-loglevel', 'error',
+      '-vf', 'scale=480:-2', '-y', '-loglevel', 'error',
       path.join(adDir, 'frame_last.png'),
     ], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
   } catch { /* best-effort */ }

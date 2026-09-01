@@ -353,7 +353,7 @@ describe('analyzeCreatives', () => {
 
       // Verify ffmpeg was called for transcoding (cmd, argsArray)
       const calls = hookExecFileSync.mock.calls;
-      expect(calls.some(c => c[0] === 'ffmpeg' && (c[1] as string[])?.includes('scale=480:-1'))).toBe(true);
+      expect(calls.some(c => c[0] === 'ffmpeg' && (c[1] as string[])?.includes('scale=480:-2'))).toBe(true);
       // Verify frame extraction
       expect(calls.some(c => c[0] === 'ffmpeg' && (c[1] as string[])?.some((a: string) => a.startsWith('fps=')))).toBe(true);
       // Verify last frame extraction

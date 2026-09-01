@@ -191,7 +191,7 @@ describe('pull', () => {
       }
     });
 
-    it('scopes both ad-level pulls to ACTIVE ads via effective_status filtering', async () => {
+    it('scopes all three ad-level pulls to ACTIVE ads via effective_status filtering', async () => {
       writeConfig();
       setupMocks();
 
@@ -209,6 +209,15 @@ describe('pull', () => {
       const dailyCall = mockFetchAsync.mock.calls[0];
       expect(dailyCall?.[2]?.params?.time_increment).toBe('1');
       expect(dailyCall?.[2]?.params?.filtering).toContain('ACTIVE');
+
+      // fetchAdCreatives (/{account}/ads) MUST carry it too: without the filter
+      // it enumerates the full archived tail with nested creative fields and Meta
+      // rejects the oversized response (error 1, "reduce the amount of data"),
+      // silently killing --keep-video retention and intel run's creative master.
+      const creativesCall = mockPaginateAll.mock.calls.find(c => c[0].endsWith('/ads'));
+      expect(creativesCall).toBeDefined();
+      expect(creativesCall?.[2]?.params?.filtering).toContain('effective_status');
+      expect(creativesCall?.[2]?.params?.filtering).toContain('ACTIVE');
     });
 
     it('requests video retention fields on both ad-level pulls but not campaign/adset', async () => {
