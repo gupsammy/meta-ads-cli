@@ -51,18 +51,18 @@ The store is the durable artifact. Videos are transient; the `asset_hash` → ta
 
 ### 0. Mode Gate
 
-Run in order; the first match wins.
+Check the four prerequisites first, one command each; do not guess. Then route — the first match wins.
 
-1. `$ARGUMENTS` contains `reconfigure` → read `references/onboarding.md` → "Reconfigure Mode". STOP when it prints "Config updated".
-2. `$ARGUMENTS` contains `backfill` → read `references/onboarding.md` → "Phase 6: Backfill" only, then STOP.
-3. Any of these is missing → **ONBOARDING MODE**: read `references/onboarding.md` and follow it completely. Onboarding ends with the first analysis run and STOPS.
-   - `~/.meta-ads-intel/config.json` with a valid `account_id`
-   - `~/.meta-ads-intel/creative-signal.env` containing `GEMINI_API_KEY` (or the env var set)
-   - `<skill-dir>/.venv/bin/python`
-   - a non-empty store: `<skill-dir>/.venv/bin/python <skill-dir>/scripts/store.py status` reports `metric_rows > 0`
+Prerequisites:
+- `<skill-dir>/.venv/bin/python` exists
+- `~/.meta-ads-intel/config.json` has a valid `account_id`
+- `~/.meta-ads-intel/creative-signal.env` contains `GEMINI_API_KEY` (or the env var is set)
+- the store is non-empty: `<skill-dir>/.venv/bin/python <skill-dir>/scripts/store.py status` reports `metric_rows > 0`
+
+1. Any prerequisite missing → **ONBOARDING MODE**: read `references/onboarding.md` and follow it completely. Onboarding ends with the first analysis run and STOPS. Onboarding is idempotent and skips satisfied phases, so entering it with a partial setup is safe; a `reconfigure` or `backfill` argument is ignored until setup is complete (an empty store with everything else present is the one case where `backfill` and onboarding coincide — onboarding's Phase 6 handles it).
+2. `$ARGUMENTS` contains `reconfigure` → read `references/onboarding.md` → "Reconfigure Mode". STOP when it prints "Config updated".
+3. `$ARGUMENTS` contains `backfill` → read `references/onboarding.md` → "Phase 6: Backfill" only (loads more history into an existing store), then STOP.
 4. Otherwise → **ANALYSIS MODE**: continue to Step 1.
-
-Check each of the four prerequisites with one command; do not guess. Onboarding is idempotent and skips satisfied phases, so entering it with a partial setup is safe.
 
 ### 1. Load Context
 
