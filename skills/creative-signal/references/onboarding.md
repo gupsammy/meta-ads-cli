@@ -46,7 +46,7 @@ Skip if `meta-ads auth status -o json` reports a valid token AND `~/.meta-ads-in
 
 Otherwise run the checkpoint flow. Non-interactive shells cannot prompt for stdin, so never run bare `meta-ads setup`.
 
-1. Ask for the Meta API access token via AskUserQuestion. Options: "I have a token ready", "Help me generate one" (→ point to Meta Business Settings → System Users → Generate token with `ads_read` + `ads_management`).
+1. Ask for the Meta API access token via AskUserQuestion. Options: "I have a token ready", "Help me generate one" (→ Meta Business Settings → System Users → Add Assets: the ad account with *View performance* → Generate token with scope `ads_read`). `ads_read` is the only scope this skill needs — everything it does is a read, including the async insights report and video source URLs. `ads_management` is optional: it enables the CLI's `campaigns/adsets/ads create|update` commands, and a token without it cannot change spend by accident.
 2. Save without selecting an account:
    ```bash
    meta-ads setup --non-interactive --token "<token>" --skip-account
