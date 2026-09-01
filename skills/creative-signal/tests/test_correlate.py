@@ -131,9 +131,11 @@ class ComputeSignalsTest(unittest.TestCase):
             a["attributes"]["tag_failed"] = i % 3 == 0
             a["attributes"]["scene_list"] = [1.0, 2.0] if i % 2 == 0 else [3.0]     # list-valued
             a["attributes"]["nested"] = {"k": i % 2}                                 # dict-valued
+            # audio_lane's phase narrative: a scalar string, so only NON_ATTRIBUTES keeps it out
+            a["attributes"]["energy_level_sequence"] = "HIGH>MEDIUM>VOID" if i % 2 == 0 else "LOW>HIGH"
         signals, _ = correlate.compute_signals(ads)
         tested = {s["attribute"].split("=")[0].split(">=")[0] for s in signals}
-        for banned in ("audio_analysis", "tag_failed", "scene_list", "nested"):
+        for banned in ("audio_analysis", "tag_failed", "scene_list", "nested", "energy_level_sequence"):
             self.assertNotIn(banned, tested, banned)
         # the real attribute is still tested
         self.assertIn("first3s_content", tested)

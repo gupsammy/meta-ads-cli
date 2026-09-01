@@ -51,6 +51,7 @@ MIN_GROUP = 3                # smaller than this there is nothing to report, eve
 NON_ATTRIBUTES = {
     "transcript", "hook_text", "cta_text", "cut_times", "width", "height", "aspect_value",
     "deterministic_version", "audio_analysis", "tag_failed",
+    "energy_level_sequence",   # free-form "HIGH>MEDIUM>VOID" string — descriptive only (spec §7)
 }
 WINDOWS = {"last_7d": 7, "last_14d": 14, "last_30d": 30}
 
