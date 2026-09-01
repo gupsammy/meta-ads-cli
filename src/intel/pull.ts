@@ -35,6 +35,13 @@ const PULL_LIMIT = 500;
  * signal — stay in lockstep across both entry points. Capped at PULL_LIMIT like
  * every other master pull; pass `warnings` to receive the at-cap truncation
  * notice (silently omitted when the array is not provided).
+ *
+ * Scoped to ACTIVE ads via AD_ACTIVE_FILTERING, identically to the two ad-level
+ * insights pulls below: without it /{account}/ads enumerates the full archived
+ * tail with nested creative fields and Meta rejects the oversized response with
+ * error code 1 ("Please reduce the amount of data you're asking for"). ACTIVE is
+ * also the correct set — the only creatives whose source videos are still
+ * fetchable are the currently-live ones (deleted ads' URLs expire).
  */
 export async function fetchAdCreatives(
   accountId: string,
@@ -45,7 +52,7 @@ export async function fetchAdCreatives(
   const result = await paginateAll<AdCreativeRow>(
     `/${accountId}/ads`,
     token,
-    { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}' } },
+    { params: { fields: 'id,name,creative{id,title,body,image_url,thumbnail_url}', filtering: AD_ACTIVE_FILTERING } },
     limit,
   );
   const flat = result.data.map(a => ({
