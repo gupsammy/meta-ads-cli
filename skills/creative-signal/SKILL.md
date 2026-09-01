@@ -84,7 +84,7 @@ Runtime: first run after backfill tags every video (≈3 s + 9k tokens per ad; 2
 
 Exit codes:
 - `0` — read `out_dir`, `signals_file`, and `warnings` from the JSON on stdout.
-- `3` — store empty. Tell the user, then run `references/onboarding.md` → Phase 7 (backfill). Do not loop.
+- `3` — store empty. Tell the user, then run `references/onboarding.md` → Phase 6 (backfill). Do not loop.
 - `1` — read the single stderr line. `Another pull instance is running` means `/meta-ads-intel` holds the lock; the script already retried for 5 minutes — ask the user to wait for it and rerun. `API access blocked` / `Session has expired` are auth problems: report and stop; suggest `meta-ads setup`. Anything else: report verbatim and stop.
 
 Read `run-status.json` from `out_dir`. Surface these before analysis:
