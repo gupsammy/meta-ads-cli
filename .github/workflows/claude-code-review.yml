@@ -93,5 +93,6 @@ jobs:
 
             If no issues are found, say so clearly — do not manufacture feedback.
           claude_args: |
-            --model sonnet
+            --model opus
+            --effort high
             --allowedTools "Read,Glob,Grep,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
