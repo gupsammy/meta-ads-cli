@@ -8,7 +8,7 @@ description: >
 license: MIT
 compatibility: >
   Requires meta-ads CLI (npm i -g meta-ads) and optionally ffmpeg/ffprobe
-  for visual creative analysis. Node.js >= 20.
+  for visual creative analysis. Node.js 22.23.4+, 24.22.1+ or 26.12.1+.
 argument-hint: "[date-preset | reconfigure]"
 metadata:
   author: gupsammy

@@ -9,7 +9,7 @@ description: >
 license: MIT
 compatibility: >
   Requires meta-ads CLI >= 0.19 (npm i -g meta-ads@^0.19), ffmpeg/ffprobe, Python >= 3.10
-  with a skill-local venv, and a Gemini API key. Node.js >= 20. macOS/Linux.
+  with a skill-local venv, and a Gemini API key. Node.js 22.23.4+, 24.22.1+ or 26.12.1+. macOS/Linux.
 argument-hint: "[last_7d | last_14d | last_30d | reconfigure | backfill]"
 metadata:
   author: gupsammy

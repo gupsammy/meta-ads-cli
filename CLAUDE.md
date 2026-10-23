@@ -12,7 +12,7 @@ pnpm lint         # eslint src/
 pnpm typecheck    # tsc --noEmit
 ```
 
-Binary: `dist/index.js` (via package.json `bin` field). Requires Node >= 20.
+Binary: `dist/index.js` (via package.json `bin` field). Requires Node ^22.23.4, ^24.22.1 or >=26.12.1.
 
 ## Project Structure
 

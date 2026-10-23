@@ -65,14 +65,14 @@ irm https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.ps1 |
 
 Handles everything: installs Node.js if needed, installs the CLI globally, and walks you through authentication and account setup.
 
-### npm (If you already have Node.js >= 20)
+### npm (If you already have Node.js 22.23.4+, 24.22.1+ or 26.12.1+)
 
 ```bash
 npm install -g meta-ads
 meta-ads setup
 ```
 
-### npx (Try without installing, requires Node.js >= 20)
+### npx (Try without installing, requires Node.js 22.23.4+, 24.22.1+ or 26.12.1+)
 
 ```bash
 npx meta-ads accounts list --access-token YOUR_TOKEN

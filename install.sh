@@ -4,7 +4,11 @@ set -euo pipefail
 # meta-ads-cli installer for macOS / Linux / WSL
 # Usage: curl -fsSL https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.sh | bash
 
-REQUIRED_NODE_MAJOR=20
+REQUIRED_NODE_MAJOR=22
+# First patched release on each supported line (2026-10-21 Node.js security release).
+NODE_FLOOR_22="22.23.4"
+NODE_FLOOR_24="24.22.1"
+NODE_FLOOR_26="26.12.1"
 FNM_INSTALL_URL="https://fnm.vercel.app/install"
 
 # --- Helpers ----------------------------------------------------------------
@@ -49,24 +53,31 @@ detect_platform() {
 
 # --- Node.js -----------------------------------------------------------------
 
-parse_node_major() {
-  # Input: "v20.11.0" → Output: "20"
-  local version="$1"
-  version="${version#v}"          # strip leading v
-  printf '%s' "${version%%.*}"    # everything before the first dot
+node_version_ok() {
+  # Input: "v22.23.4" → exit 0 if the version is on a supported line at or above its patched floor
+  local version="${1#v}" floor major minor patch fmin fpatch
+  IFS=. read -r major minor patch <<<"$version"
+  patch="${patch%%[^0-9]*}"
+  case "$major" in
+    22) floor="$NODE_FLOOR_22" ;;
+    24) floor="$NODE_FLOOR_24" ;;
+    26) floor="$NODE_FLOOR_26" ;;
+    *)  [ "$major" -gt 26 ]; return ;;  # later majors ship after the fix
+  esac
+  IFS=. read -r _ fmin fpatch <<<"$floor"
+  [ "$minor" -gt "$fmin" ] || { [ "$minor" -eq "$fmin" ] && [ "$patch" -ge "$fpatch" ]; }
 }
 
 check_node() {
   if command -v node >/dev/null 2>&1; then
-    local version major
+    local version
     version="$(node --version)"
-    major="$(parse_node_major "$version")"
 
-    if [ "$major" -ge "$REQUIRED_NODE_MAJOR" ]; then
-      ok "Node.js $version found (>= $REQUIRED_NODE_MAJOR)"
+    if node_version_ok "$version"; then
+      ok "Node.js $version found (patched)"
       return 0
     else
-      err "Node.js $version found, but version $REQUIRED_NODE_MAJOR+ is required."
+      err "Node.js $version found, but a patched Node.js is required: $NODE_FLOOR_22+ (22.x), $NODE_FLOOR_24+ (24.x) or $NODE_FLOOR_26+."
       err ""
       err "If you use fnm:  fnm install $REQUIRED_NODE_MAJOR && fnm use $REQUIRED_NODE_MAJOR"
       err "If you use nvm:  nvm install $REQUIRED_NODE_MAJOR && nvm use $REQUIRED_NODE_MAJOR"
