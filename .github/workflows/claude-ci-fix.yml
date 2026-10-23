@@ -63,7 +63,7 @@ jobs:
 
             This is a TypeScript CLI project (meta-ads-cli) using pnpm, tsup, vitest,
             and eslint. The CI pipeline runs: typecheck, lint, build, test across
-            Node 20/22 on ubuntu/macos/windows.
+            Node 22/24 on ubuntu/macos/windows.
 
             Instructions:
             1. Read the error logs carefully to identify the root cause.

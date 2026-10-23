@@ -2,7 +2,9 @@
 # Usage: irm https://raw.githubusercontent.com/gupsammy/meta-ads-cli/master/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
-$RequiredNodeMajor = 20
+$RequiredNodeMajor = 22
+# First patched release on each supported line (2026-10-21 Node.js security release).
+$NodeFloors = @{ 22 = [version]"22.23.4"; 24 = [version]"24.22.1"; 26 = [version]"26.12.1" }
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -32,11 +34,13 @@ function Stop-WithError {
 
 # --- Node.js -----------------------------------------------------------------
 
-function Get-NodeMajor {
+function Test-NodeVersionOk {
     param([string]$version)
-    $version = $version.TrimStart("v")
-    $parts = $version.Split(".")
-    return [int]$parts[0]
+    $parsed = [version]($version.TrimStart("v") -replace "-.*$", "")
+    # Later majors ship after the fix
+    if ($parsed.Major -gt 26) { return $true }
+    if (-not $NodeFloors.ContainsKey($parsed.Major)) { return $false }
+    return $parsed -ge $NodeFloors[$parsed.Major]
 }
 
 function Test-NodeInstalled {
@@ -95,13 +99,12 @@ function Install-NodeViaFnm {
 function Ensure-Node {
     if (Test-NodeInstalled) {
         $version = node --version
-        $major = Get-NodeMajor $version
 
-        if ($major -ge $RequiredNodeMajor) {
-            Write-Ok "Node.js $version found (>= $RequiredNodeMajor)"
+        if (Test-NodeVersionOk $version) {
+            Write-Ok "Node.js $version found (patched)"
             return
         } else {
-            Write-Err "Node.js $version found, but version $RequiredNodeMajor+ is required."
+            Write-Err "Node.js $version found, but a patched Node.js is required: $($NodeFloors[22])+ (22.x), $($NodeFloors[24])+ (24.x) or $($NodeFloors[26])+."
             Write-Err ""
             Write-Err "If you use fnm:  fnm install $RequiredNodeMajor; fnm use $RequiredNodeMajor"
             Write-Err "If you use nvm:  nvm install $RequiredNodeMajor; nvm use $RequiredNodeMajor"

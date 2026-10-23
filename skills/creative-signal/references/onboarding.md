@@ -19,7 +19,7 @@ node --version; which meta-ads && meta-ads --version; which ffmpeg ffprobe; pyth
 
 Requirements and fixes, in order. Stop at the first one that cannot be fixed and tell the user what to install.
 
-1. **Node ≥ 20.** Missing → "Install Node.js 20+ from nodejs.org (or `brew install node`), then run /creative-signal again." Blocking.
+1. **Node 22.23.4+, 24.22.1+ or 26.12.1+.** Missing or older → "Install Node.js 22 LTS (22.23.4+) from nodejs.org (or `brew install node@22`), then run /creative-signal again." Blocking.
 2. **meta-ads ≥ 0.19.** Missing or older:
    ```bash
    npm i -g meta-ads@^0.19
